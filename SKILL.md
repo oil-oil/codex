@@ -24,28 +24,29 @@ The script path is:
 Minimal invocation:
 
 ```bash
-~/.claude/skills/codex/scripts/ask_codex.sh \
-  --workspace /absolute/workspace/path \
-  --task "Your request in natural language"
+~/.claude/skills/codex/scripts/ask_codex.sh "Your request in natural language"
 ```
 
 With file context:
 
 ```bash
-~/.claude/skills/codex/scripts/ask_codex.sh \
-  --workspace /absolute/workspace/path \
-  --task "Refactor these components to use the new API" \
+~/.claude/skills/codex/scripts/ask_codex.sh "Refactor these components to use the new API" \
   --file src/components/UserList.tsx \
   --file src/components/UserDetail.tsx
+```
+
+With explicit workspace:
+
+```bash
+~/.claude/skills/codex/scripts/ask_codex.sh "Fix the bug" \
+  --workspace /other/project/path
 ```
 
 Multi-turn conversation (continue a previous session):
 
 ```bash
-~/.claude/skills/codex/scripts/ask_codex.sh \
-  --workspace /absolute/workspace/path \
-  --session <session_id from previous run> \
-  --task "Also add retry logic with exponential backoff"
+~/.claude/skills/codex/scripts/ask_codex.sh "Also add retry logic with exponential backoff" \
+  --session <session_id from previous run>
 ```
 
 The script prints on success:
@@ -81,14 +82,14 @@ Handle it yourself when:
 ### Task delegation (most common)
 
 1. Design the solution and break it into concrete steps.
-2. Run the script with `--task` describing exactly what to implement.
+2. Run the script with the task describing exactly what to implement.
 3. Pass relevant files with `--file` so CodeX has context.
 4. Read the output — CodeX executes changes and reports what it did.
 5. Review the changes in your workspace.
 
 ### Discussion mode
 
-1. Run the script with a question-oriented `--task`.
+1. Run the script with a question-oriented task.
 2. Pass the relevant files for CodeX to analyze.
 3. Read its feedback — it thinks from an implementer's perspective.
 4. Combine its practical insights with your architectural judgment.
@@ -111,6 +112,7 @@ Each follow-up call carries the full conversation history.
 
 ## Options
 
+- `--workspace <path>` — Target workspace directory (defaults to current directory).
 - `--session <id>` — Resume a previous session for multi-turn conversation.
 - `--model <name>` — Override model (default: uses Codex config).
 - `--sandbox <mode>` — Override sandbox policy (default: workspace-write via full-auto).
@@ -119,5 +121,5 @@ Each follow-up call carries the full conversation history.
 ## Execution notes
 
 - CodeX runs with `--full-auto` by default, meaning it can read and write files in the workspace autonomously.
-- Keep `--task` text concrete and actionable. Vague requests get vague results.
+- Keep task text concrete and actionable. Vague requests get vague results.
 - When CodeX's suggestions conflict with your architectural decisions, your judgment takes priority.

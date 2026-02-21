@@ -4,14 +4,13 @@ set -euo pipefail
 usage() {
   cat <<'USAGE'
 Usage:
-  ask_dev_g.sh --workspace <path> [--task <text> | --task-file <path>] [options]
+  ask_codex.sh <task> [options]
+  ask_codex.sh -t <task> [options]
 
-Required:
-  -w, --workspace <path>       Workspace directory
-
-Task input (choose one, or pipe from stdin):
-  -t, --task <text>            Request text
-      --task-file <path>       Read request from file
+Task input:
+  <task>                       First positional argument is the task text
+  -t, --task <text>            Alias for positional task (backward compat)
+  (stdin)                      Pipe task text via stdin if no arg/flag given
 
 File context (optional, repeatable):
   -f, --file <path>            Priority file path
@@ -20,6 +19,7 @@ Multi-turn:
       --session <id>           Resume a previous session (thread_id from prior run)
 
 Options:
+  -w, --workspace <path>       Workspace directory (default: current directory)
       --model <name>           Model override
       --sandbox <mode>         Sandbox mode override
       --read-only              Read-only sandbox (no file changes)
@@ -32,11 +32,14 @@ Output (on success):
   output_path=<file>           Path to response markdown
 
 Examples:
-  # New task
-  ask_dev_g.sh -w /repo -t "Add error handling to api.ts" -f src/api.ts
+  # New task (positional)
+  ask_codex.sh "Add error handling to api.ts" -f src/api.ts
+
+  # With explicit workspace
+  ask_codex.sh "Fix the bug" -w /other/repo
 
   # Continue conversation
-  ask_dev_g.sh -w /repo --session <id> -t "Also add retry logic"
+  ask_codex.sh "Also add retry logic" --session <id>
 USAGE
 }
 
@@ -84,9 +87,8 @@ append_file_refs() {
 
 # --- Parse arguments ---
 
-workspace=""
+workspace="${PWD}"
 task_text=""
-task_file=""
 model=""
 sandbox_mode=""
 read_only=false
@@ -99,7 +101,6 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     -w|--workspace)   workspace="${2:-}"; shift 2 ;;
     -t|--task)        task_text="${2:-}"; shift 2 ;;
-    --task-file)      task_file="${2:-}"; shift 2 ;;
     -f|--file|--focus) append_file_refs "${2:-}"; shift 2 ;;
     --model)          model="${2:-}"; shift 2 ;;
     --sandbox)        sandbox_mode="${2:-}"; full_auto=false; shift 2 ;;
@@ -108,7 +109,8 @@ while [[ $# -gt 0 ]]; do
     --session)        session_id="${2:-}"; shift 2 ;;
     -o|--output)      output_path="${2:-}"; shift 2 ;;
     -h|--help)        usage; exit 0 ;;
-    *) echo "[ERROR] Unknown argument: $1" >&2; usage >&2; exit 1 ;;
+    -*)               echo "[ERROR] Unknown option: $1" >&2; usage >&2; exit 1 ;;
+    *)                if [[ -z "$task_text" ]]; then task_text="$1"; shift; else echo "[ERROR] Unexpected argument: $1" >&2; usage >&2; exit 1; fi ;;
   esac
 done
 
@@ -117,27 +119,18 @@ require_cmd jq
 
 # --- Validate inputs ---
 
-if [[ -z "$workspace" ]]; then
-  echo "[ERROR] --workspace is required" >&2; usage >&2; exit 1
-fi
 if [[ ! -d "$workspace" ]]; then
   echo "[ERROR] Workspace does not exist: $workspace" >&2; exit 1
 fi
 workspace="$(cd "$workspace" && pwd)"
 
-if [[ -n "$task_file" ]]; then
-  if [[ ! -f "$task_file" ]]; then
-    echo "[ERROR] Task file does not exist: $task_file" >&2; exit 1
-  fi
-  task_text="$(cat "$task_file")"
-fi
 if [[ -z "$task_text" && ! -t 0 ]]; then
   task_text="$(cat)"
 fi
 task_text="$(trim_whitespace "$task_text")"
 
 if [[ -z "$task_text" ]]; then
-  echo "[ERROR] Request text is empty. Pass --task, --task-file, or stdin." >&2; exit 1
+  echo "[ERROR] Request text is empty. Pass a positional arg, --task, or stdin." >&2; exit 1
 fi
 
 # --- Prepare output path ---
