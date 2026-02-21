@@ -144,7 +144,8 @@ fi
 
 if [[ -z "$output_path" ]]; then
   timestamp="$(date -u +"%Y%m%d-%H%M%S")"
-  output_path="$workspace/.runtime/dev-g/${timestamp}.md"
+  skill_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+  output_path="$skill_dir/.runtime/${timestamp}.md"
 fi
 mkdir -p "$(dirname "$output_path")"
 
