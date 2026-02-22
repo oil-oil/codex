@@ -190,18 +190,56 @@ else
   [[ -n "$model" ]] && cmd+=(-m "$model")
 fi
 
+# --- Progress watcher function ---
+
+print_progress() {
+  local line="$1"
+  local item_type cmd_str preview
+  # Fast string checks before calling jq
+  case "$line" in
+    *'"item.started"'*'"command_execution"'*)
+      cmd_str=$(printf '%s' "$line" | jq -r '.item.command // empty' 2>/dev/null | sed 's|^/bin/zsh -lc ||; s|^/bin/bash -c ||' | cut -c1-100)
+      [[ -n "$cmd_str" ]] && echo "[codex] > $cmd_str" >&2
+      ;;
+    *'"item.completed"'*'"agent_message"'*)
+      preview=$(printf '%s' "$line" | jq -r '.item.text // empty' 2>/dev/null | head -1 | cut -c1-120)
+      [[ -n "$preview" ]] && echo "[codex] $preview" >&2
+      ;;
+  esac
+}
+
 # --- Execute and capture JSON output ---
 
 stderr_file="$(mktemp)"
 json_file="$(mktemp)"
 prompt_file="$(mktemp)"
 trap 'rm -f "$stderr_file" "$json_file" "$prompt_file"' EXIT
+trap 'rm -f "$stderr_file" "$json_file" "$prompt_file"' EXIT
 
 # Write prompt to a temp file and pipe from there to avoid shell argument
 # length issues and encoding problems with very long or multi-byte prompts.
 printf "%s" "$prompt" > "$prompt_file"
 
-if ! (cd "$workspace" && "${cmd[@]}" < "$prompt_file" >"$json_file" 2>"$stderr_file"); then
+# Use `script` to run codex in a pseudo-TTY so it line-buffers its JSONL output.
+# Without this, codex block-buffers when stdout is a pipe, preventing real-time progress.
+script -q /dev/null /bin/bash -c \
+  "cd $(printf '%q' "$workspace") && $(printf '%q ' "${cmd[@]}") < $(printf '%q' "$prompt_file") 2>$(printf '%q' "$stderr_file")" \
+  | while IFS= read -r line; do
+    # Strip terminal artifacts (carriage return, ^D EOF marker)
+    cleaned="${line//$'\r'/}"
+    cleaned="${cleaned//$'\004'/}"
+    [[ -z "$cleaned" ]] && continue
+    # Only process JSON lines (must start with '{')
+    [[ "$cleaned" != \{* ]] && continue
+    # Write to json_file for later parsing
+    printf '%s\n' "$cleaned" >> "$json_file"
+    # Only parse progress-relevant events (fast string check before jq)
+    case "$cleaned" in
+      *'"item.started"'*|*'"item.completed"'*) print_progress "$cleaned" ;;
+    esac
+  done
+
+if [[ -s "$stderr_file" ]] && grep -q '\[ERROR\]' "$stderr_file" 2>/dev/null; then
   echo "[ERROR] Codex command failed" >&2
   cat "$stderr_file" >&2
   exit 1
@@ -218,7 +256,14 @@ thread_id="$(jq -r 'select(.type == "thread.started") | .thread_id' < "$json_fil
 # Collect all completed items: file changes, tool calls, and agent messages.
 # This gives full visibility into what codex actually did, not just the last message.
 {
-  # 1. Show file write/patch operations
+  # 1. Show command executions (shell commands codex ran)
+  jq -r '
+    select(.type == "item.completed" and .item.type == "command_execution")
+    | .item
+    | "### Shell: `" + (.command // "unknown" | gsub("^/bin/zsh -lc "; "") | gsub("^/bin/bash -c "; ""))[0:200] + "`\n" + (.aggregated_output // "" | .[0:500])
+  ' < "$json_file" 2>/dev/null
+
+  # 2. Show file write/patch operations (tool_call style, if any)
   jq -r '
     select(.type == "item.completed" and .item.type == "tool_call")
     | .item
@@ -232,7 +277,7 @@ thread_id="$(jq -r 'select(.type == "thread.started") | .thread_id' < "$json_fil
       end
   ' < "$json_file" 2>/dev/null
 
-  # 2. Show all agent messages (not just the last one)
+  # 3. Show all agent messages (not just the last one)
   jq -r '
     select(.type == "item.completed" and .item.type == "agent_message")
     | .item.text
