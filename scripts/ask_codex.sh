@@ -179,7 +179,7 @@ if [[ -n "$session_id" ]]; then
   cmd+=("$session_id")
 else
   # New session
-  cmd=(codex exec --cd "$workspace" --json)
+  cmd=(codex exec --cd "$workspace" --skip-git-repo-check --json)
   if [[ "$read_only" == true ]]; then
     cmd+=(--sandbox read-only)
   elif [[ -n "$sandbox_mode" ]]; then
