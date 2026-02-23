@@ -21,6 +21,7 @@ Multi-turn:
 Options:
   -w, --workspace <path>       Workspace directory (default: current directory)
       --model <name>           Model override
+      --reasoning <level>      Reasoning effort: low, medium, high (default: medium)
       --sandbox <mode>         Sandbox mode override
       --read-only              Read-only sandbox (no file changes)
       --full-auto              Full-auto mode (default)
@@ -90,6 +91,7 @@ append_file_refs() {
 workspace="${PWD}"
 task_text=""
 model=""
+reasoning_effort=""
 sandbox_mode=""
 read_only=false
 full_auto=true
@@ -103,6 +105,7 @@ while [[ $# -gt 0 ]]; do
     -t|--task)        task_text="${2:-}"; shift 2 ;;
     -f|--file|--focus) append_file_refs "${2:-}"; shift 2 ;;
     --model)          model="${2:-}"; shift 2 ;;
+    --reasoning)      reasoning_effort="${2:-}"; shift 2 ;;
     --sandbox)        sandbox_mode="${2:-}"; full_auto=false; shift 2 ;;
     --read-only)      read_only=true; full_auto=false; shift ;;
     --full-auto)      full_auto=true; shift ;;
@@ -163,11 +166,17 @@ if [[ -n "$file_block" ]]; then
   prompt+=$'\n'"$file_block"
 fi
 
+# --- Determine reasoning effort ---
+
+if [[ -z "$reasoning_effort" ]]; then
+  reasoning_effort="medium"
+fi
+
 # --- Build codex command ---
 
 if [[ -n "$session_id" ]]; then
   # Resume mode: continue a previous session
-  cmd=(codex exec resume --skip-git-repo-check --json)
+  cmd=(codex exec resume --skip-git-repo-check --json -c "model_reasoning_effort=\"$reasoning_effort\"")
   if [[ "$read_only" == true ]]; then
     cmd+=(--sandbox read-only)
   elif [[ -n "$sandbox_mode" ]]; then
@@ -179,7 +188,7 @@ if [[ -n "$session_id" ]]; then
   cmd+=("$session_id")
 else
   # New session
-  cmd=(codex exec --cd "$workspace" --skip-git-repo-check --json)
+  cmd=(codex exec --cd "$workspace" --skip-git-repo-check --json -c "model_reasoning_effort=\"$reasoning_effort\"")
   if [[ "$read_only" == true ]]; then
     cmd+=(--sandbox read-only)
   elif [[ -n "$sandbox_mode" ]]; then

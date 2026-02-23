@@ -115,8 +115,21 @@ Each follow-up call carries the full conversation history.
 - `--workspace <path>` — Target workspace directory (defaults to current directory).
 - `--session <id>` — Resume a previous session for multi-turn conversation.
 - `--model <name>` — Override model (default: uses Codex config).
+- `--reasoning <level>` — Reasoning effort: `low`, `medium`, `high` (default: `medium`).
 - `--sandbox <mode>` — Override sandbox policy (default: workspace-write via full-auto).
 - `--read-only` — Run in read-only mode for pure discussion/analysis, no file changes.
+
+## Reasoning effort guidance
+
+Default is `medium`, suitable for most coding tasks. Pass `--reasoning high` when the task requires deeper thinking:
+
+- Code review or security audit
+- Debugging and root cause analysis
+- Complex refactoring with tricky edge cases
+- Investigating why something doesn't work
+- Analyzing performance or architectural issues
+
+Keep `medium` for straightforward tasks: code generation, batch changes, test writing, simple bug fixes with known root cause.
 
 ## Execution notes
 
