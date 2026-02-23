@@ -165,7 +165,6 @@ prompt="$task_text"
 if [[ -n "$file_block" ]]; then
   prompt+=$'\n'"$file_block"
 fi
-prompt+=$'\n\nIMPORTANT: When running shell commands, always quote file paths that contain brackets, spaces, or special characters (e.g. "src/app/[locale]/page.tsx").'
 
 # --- Determine reasoning effort ---
 

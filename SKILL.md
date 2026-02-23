@@ -12,6 +12,7 @@ Delegate coding execution to Codex CLI. CodeX turns clear plans into working cod
 - ONLY interact with CodeX through the bundled shell script. NEVER call `codex` CLI directly.
 - Run the script ONCE per task. If it succeeds (exit code 0), read the output file and proceed. Do NOT re-run or retry.
 - Do NOT read or inspect the script source code. Treat it as a black box.
+- ALWAYS quote file paths containing brackets, spaces, or special characters when passing to the script (e.g. `--file "src/app/[locale]/page.tsx"`). Unquoted `[...]` triggers zsh glob expansion.
 
 ## How to call the script
 
