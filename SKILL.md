@@ -13,6 +13,8 @@ Delegate coding execution to Codex CLI. CodeX turns clear plans into working cod
 - Run the script ONCE per task. If it succeeds (exit code 0), read the output file and proceed. Do NOT re-run or retry.
 - Do NOT read or inspect the script source code. Treat it as a black box.
 - ALWAYS quote file paths containing brackets, spaces, or special characters when passing to the script (e.g. `--file "src/app/[locale]/page.tsx"`). Unquoted `[...]` triggers zsh glob expansion.
+- **Keep the task prompt concise** (under ~200 words). Describe WHAT to do, not HOW. CodeX is an autonomous agent with full workspace access — it will read files, explore code, and figure out implementation details on its own.
+- **Never paste file contents into the prompt.** Use `--file` to point CodeX to key files — it reads them directly. Duplicating file contents in the prompt wastes tokens and adds no value.
 
 ## How to call the script
 
@@ -66,9 +68,9 @@ Call CodeX when at least one of these is true:
 
 ## Workflow
 
-1. Design the solution and break it into concrete steps.
-2. Run the script with the task describing exactly what to implement. For discussion, use a question-oriented task with `--read-only`.
-3. Pass relevant files with `--file` (2-6 high-signal files; CodeX has full workspace access to discover others).
+1. Design the solution and identify the key files involved.
+2. Run the script with a clear, concise task description. Tell CodeX the goal and constraints, not step-by-step implementation details — it figures those out itself. For discussion, use a question-oriented task with `--read-only`.
+3. Pass relevant files with `--file` (2-6 high-signal entry points; CodeX has full workspace access and will discover related files on its own).
 4. Read the output — CodeX executes changes and reports what it did.
 5. Review the changes in your workspace.
 
@@ -77,7 +79,7 @@ For multi-step projects, use `--session <id>` to continue with full conversation
 ## Options
 
 - `--workspace <path>` — Target workspace directory (defaults to current directory).
-- `--file <path>` — Priority file for context (repeatable, workspace-relative or absolute).
+- `--file <path>` — Point CodeX to key entry-point files (repeatable, workspace-relative or absolute). Don't duplicate their contents in the prompt.
 - `--session <id>` — Resume a previous session for multi-turn conversation.
 - `--model <name>` — Override model (default: uses Codex config).
 - `--reasoning <level>` — Reasoning effort: `low`, `medium`, `high` (default: `medium`). Use `high` for code review, debugging, complex refactoring, or root cause analysis.
