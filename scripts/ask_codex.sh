@@ -223,7 +223,6 @@ stderr_file="$(mktemp)"
 json_file="$(mktemp)"
 prompt_file="$(mktemp)"
 trap 'rm -f "$stderr_file" "$json_file" "$prompt_file"' EXIT
-trap 'rm -f "$stderr_file" "$json_file" "$prompt_file"' EXIT
 
 # Write prompt to a temp file and pipe from there to avoid shell argument
 # length issues and encoding problems with very long or multi-byte prompts.

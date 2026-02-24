@@ -36,13 +36,6 @@ With file context:
   --file src/components/UserDetail.tsx
 ```
 
-With explicit workspace:
-
-```bash
-~/.claude/skills/codex/scripts/ask_codex.sh "Fix the bug" \
-  --workspace /other/project/path
-```
-
 Multi-turn conversation (continue a previous session):
 
 ```bash
@@ -71,75 +64,22 @@ Call CodeX when at least one of these is true:
 - Writing or updating tests based on existing code.
 - Simple-to-moderate bug fixes where the root cause is identified.
 
-Handle it yourself when:
-
-- The task requires architecture design, technical strategy, or tradeoff analysis.
-- Copywriting, documentation prose, or nuanced communication is needed.
-- Deep contextual understanding of business requirements is critical.
-- The problem is ambiguous and needs clarification before any code is written.
-
 ## Workflow
 
-### Task delegation (most common)
-
 1. Design the solution and break it into concrete steps.
-2. Run the script with the task describing exactly what to implement.
-3. Pass relevant files with `--file` so CodeX has context.
+2. Run the script with the task describing exactly what to implement. For discussion, use a question-oriented task with `--read-only`.
+3. Pass relevant files with `--file` (2-6 high-signal files; CodeX has full workspace access to discover others).
 4. Read the output — CodeX executes changes and reports what it did.
 5. Review the changes in your workspace.
 
-### Discussion mode
-
-1. Run the script with a question-oriented task.
-2. Pass the relevant files for CodeX to analyze.
-3. Read its feedback — it thinks from an implementer's perspective.
-4. Combine its practical insights with your architectural judgment.
-
-### Multi-step projects
-
-Use `--session` to continue the conversation with context:
-
-1. First call: core implementation. Save the `session_id` from output.
-2. Review output, then second call with `--session <id>`: tests and edge cases.
-3. Third call with `--session <id>` if needed: cleanup and polish.
-
-Each follow-up call carries the full conversation history.
-
-### Background execution
-
-When you have multiple independent coding tasks, run them in parallel via the Task tool with `run_in_background: true`. The sub-agent calls the script, reads the output, and reports back.
-
-Only use this when tasks are truly independent (different files, no shared state). Sequential tasks that depend on each other should still use `--session`.
-
-## File reference guidance
-
-- Use `--file` with workspace-relative or absolute paths.
-- Include 2-6 high-signal files rather than dumping everything.
-- CodeX runs with full workspace access, so it can discover related files on its own.
+For multi-step projects, use `--session <id>` to continue with full conversation history. For independent parallel tasks, use the Task tool with `run_in_background: true`.
 
 ## Options
 
 - `--workspace <path>` — Target workspace directory (defaults to current directory).
+- `--file <path>` — Priority file for context (repeatable, workspace-relative or absolute).
 - `--session <id>` — Resume a previous session for multi-turn conversation.
 - `--model <name>` — Override model (default: uses Codex config).
-- `--reasoning <level>` — Reasoning effort: `low`, `medium`, `high` (default: `medium`).
+- `--reasoning <level>` — Reasoning effort: `low`, `medium`, `high` (default: `medium`). Use `high` for code review, debugging, complex refactoring, or root cause analysis.
 - `--sandbox <mode>` — Override sandbox policy (default: workspace-write via full-auto).
-- `--read-only` — Run in read-only mode for pure discussion/analysis, no file changes.
-
-## Reasoning effort guidance
-
-Default is `medium`, suitable for most coding tasks. Pass `--reasoning high` when the task requires deeper thinking:
-
-- Code review or security audit
-- Debugging and root cause analysis
-- Complex refactoring with tricky edge cases
-- Investigating why something doesn't work
-- Analyzing performance or architectural issues
-
-Keep `medium` for straightforward tasks: code generation, batch changes, test writing, simple bug fixes with known root cause.
-
-## Execution notes
-
-- CodeX runs with `--full-auto` by default, meaning it can read and write files in the workspace autonomously.
-- Keep task text concrete and actionable. Vague requests get vague results.
-- When CodeX's suggestions conflict with your architectural decisions, your judgment takes priority.
+- `--read-only` — Read-only mode for pure discussion/analysis, no file changes.
