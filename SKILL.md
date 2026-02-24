@@ -105,6 +105,12 @@ Use `--session` to continue the conversation with context:
 
 Each follow-up call carries the full conversation history.
 
+### Background execution
+
+When you have multiple independent coding tasks, run them in parallel via the Task tool with `run_in_background: true`. The sub-agent calls the script, reads the output, and reports back.
+
+Only use this when tasks are truly independent (different files, no shared state). Sequential tasks that depend on each other should still use `--session`.
+
 ## File reference guidance
 
 - Use `--file` with workspace-relative or absolute paths.
