@@ -13,8 +13,9 @@ Delegate coding execution to Codex CLI. CodeX turns clear plans into working cod
 - Run the script ONCE per task. If it succeeds (exit code 0), read the output file and proceed. Do NOT re-run or retry.
 - Do NOT read or inspect the script source code. Treat it as a black box.
 - ALWAYS quote file paths containing brackets, spaces, or special characters when passing to the script (e.g. `--file "src/app/[locale]/page.tsx"`). Unquoted `[...]` triggers zsh glob expansion.
-- **Keep the task prompt concise** (under ~200 words). Describe WHAT to do, not HOW. CodeX is an autonomous agent with full workspace access — it will read files, explore code, and figure out implementation details on its own.
+- **Keep the task prompt focused.** Aim for under ~500 words. Describe WHAT to do and key constraints, not step-by-step HOW. CodeX is an autonomous agent with full workspace access — it reads files, explores code, and figures out implementation details on its own.
 - **Never paste file contents into the prompt.** Use `--file` to point CodeX to key files — it reads them directly. Duplicating file contents in the prompt wastes tokens and adds no value.
+- **Don't reference or describe the SKILL.md itself in the prompt.** CodeX doesn't need to know about this skill's configuration.
 
 ## How to call the script
 
