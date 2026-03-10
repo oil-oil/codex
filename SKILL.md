@@ -19,6 +19,8 @@ Delegate coding execution to Codex CLI. CodeX turns clear plans into working cod
 
 ## How to call the script
 
+### Linux/macOS (bash)
+
 The script path is:
 
 ```
@@ -45,6 +47,37 @@ Multi-turn conversation (continue a previous session):
 ~/.claude/skills/codex/scripts/ask_codex.sh "Also add retry logic with exponential backoff" \
   --session <session_id from previous run>
 ```
+
+### Windows (PowerShell)
+
+The script path is:
+
+```
+~/.claude/skills/codex/scripts/ask_codex.ps1
+```
+
+Minimal invocation:
+
+```powershell
+& ~/.claude/skills/codex/scripts/ask_codex.ps1 "Your request in natural language"
+```
+
+With file context:
+
+```powershell
+& ~/.claude/skills/codex/scripts/ask_codex.ps1 "Refactor these components to use the new API" `
+  -f src/components/UserList.tsx `
+  -f src/components/UserDetail.tsx
+```
+
+Multi-turn conversation (continue a previous session):
+
+```powershell
+& ~/.claude/skills/codex/scripts/ask_codex.ps1 "Also add retry logic with exponential backoff" `
+  -Session <session_id from previous run>
+```
+
+### Output format
 
 The script prints on success:
 
@@ -86,3 +119,16 @@ For multi-step projects, use `--session <id>` to continue with full conversation
 - `--reasoning <level>` — Reasoning effort: `low`, `medium`, `high` (default: `medium`). Use `high` for code review, debugging, complex refactoring, or root cause analysis.
 - `--sandbox <mode>` — Override sandbox policy (default: workspace-write via full-auto).
 - `--read-only` — Read-only mode for pure discussion/analysis, no file changes.
+
+## Resume mode limitations
+
+When using `--session` to resume a previous conversation, note these limitations:
+
+- **Must run in a git repository** — The `codex exec resume` command requires a git-trusted directory. It does not support `--skip-git-repo-check`.
+- **Limited options** — Resume mode only supports `-c/--config` and `--last`. The following options are **not supported** in resume mode:
+  - `--sandbox`
+  - `--full-auto`
+  - `--read-only`
+  - `--model`
+  - `--workspace` (resumes in the original session's context)
+- **Text output only** — Resume mode returns plain text instead of JSON-structured output.
