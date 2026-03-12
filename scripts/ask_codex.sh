@@ -296,15 +296,18 @@ else
   # Collect all completed items: file changes, tool calls, and agent messages.
   # This gives full visibility into what codex actually did, not just the last message.
   {
-    # 1. Show command executions (shell commands codex ran)
-    # Skip pure file-reading commands (sed/cat/head/tail/nl/rg/grep/awk/wc/find/ls) —
-    # these are Codex's internal exploration and add no signal for Claude Code.
-    # Keep build/test/git/mutation commands that reflect actual work done.
+    # 1. Show command executions — skip pure file-reading/searching commands.
+    # Codex explores the codebase heavily (sed/cat/nl/rg/grep/awk/wc/find/ls), but
+    # those reads produce no signal for Claude Code — it can read files directly if needed.
+    # Keep build, test, git, and mutation commands that reflect actual work done.
+    #
+    # Note: zsh wraps commands in quotes, so after stripping the shell prefix the
+    # command may start with " or ' — the regex accounts for this with [\"']?.
     jq -r '
       select(.type == "item.completed" and .item.type == "command_execution")
       | .item
       | ((.command // "") | gsub("^/bin/zsh -lc "; "") | gsub("^/bin/bash -c "; "")) as $cmd
-      | select($cmd | test("^(sed |cat |head |tail |nl |rg |grep |awk |wc |find |ls )") | not)
+      | select($cmd | test("^[\"'"'"']?(sed |cat |head |tail |nl |rg |grep |awk |wc |find |ls )") | not)
       | "### Shell: `" + ($cmd[0:200]) + "`\n" + (.aggregated_output // "" | .[0:500])
     ' < "$json_file" 2>/dev/null
 
@@ -322,10 +325,13 @@ else
         end
     ' < "$json_file" 2>/dev/null
 
-    # 3. Show all agent messages (not just the last one)
+    # 3. Show only the last agent message (the final summary/conclusion).
+    # Intermediate messages are Codex narrating its exploration steps — useful during
+    # execution but noise when Claude Code reads the finished result. The last message
+    # is where Codex reports what it actually did or found.
     jq -r '
-      select(.type == "item.completed" and .item.type == "agent_message")
-      | .item.text
+      [select(.type == "item.completed" and .item.type == "agent_message") | .item.text]
+      | last // empty
     ' < "$json_file" 2>/dev/null
   } > "$output_path"
 
