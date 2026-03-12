@@ -95,7 +95,7 @@ For multi-step projects, use `--session <id>` to continue with full conversation
 
 ## Failure handling
 
-- **`script: tcgetattr/ioctl: Operation not supported on socket`** (exit code 1): the script's pseudo-TTY setup failed because the environment has no real terminal. The script now detects this automatically and falls back to direct execution — update to the latest version if you still see this.
+- **`script: tcgetattr/ioctl: Operation not supported on socket`** (exit code 1): the `script` command probes stdin with `tcgetattr` at startup and only tolerates `ENOTTY`/`ENODEV` errors. When Claude Code connects stdin via a socketpair, the kernel returns `EOPNOTSUPP` instead — which `script` doesn't whitelist, so it exits immediately. The script detects this automatically by probing with `script -q /dev/null true` first and falls back to direct execution. Update to the latest version if you still see this error.
 - **Exit code 137**: the task was interrupted (user cancel or OOM). Not a Codex bug — retry or break the task into smaller pieces.
 - **`ERROR codex_core::codex: failed to load skill ...`** in stderr: one of Codex's own installed skills has a broken YAML file. This warning is harmless and doesn't affect the current task — ignore it.
 - **`(no response from codex)`** in the output file: Codex ran but produced no readable output. Check stderr for clues; the task may have hit a sandbox restriction.
