@@ -222,11 +222,25 @@ trap 'rm -f "$stderr_file" "$json_file" "$text_file" "$prompt_file"' EXIT
 # length issues and encoding problems with very long or multi-byte prompts.
 printf "%s" "$prompt" > "$prompt_file"
 
+# Run codex and capture its output.
+# We prefer `script` to allocate a pseudo-TTY, which forces codex to line-buffer
+# its output so progress events arrive in real time. However, `script` requires a
+# real controlling terminal and fails with "tcgetattr/ioctl: Operation not supported
+# on socket" in socket-based environments (e.g. some Claude Code sandboxes). We
+# detect this upfront and fall back to direct execution — output may arrive all at
+# once at the end, but the task still completes correctly.
+run_codex() {
+  if script -q /dev/null true >/dev/null 2>&1; then
+    script -q /dev/null /bin/bash -c \
+      "cd $(printf '%q' "$workspace") && $(printf '%q ' "${cmd[@]}") < $(printf '%q' "$prompt_file") 2>$(printf '%q' "$stderr_file")"
+  else
+    (cd "$workspace" && "${cmd[@]}" < "$prompt_file" 2>"$stderr_file")
+  fi
+}
+
 if [[ -n "$session_id" ]]; then
   # Resume mode: plain text output (no JSON support)
-  script -q /dev/null /bin/bash -c \
-    "cd $(printf '%q' "$workspace") && $(printf '%q ' "${cmd[@]}") < $(printf '%q' "$prompt_file") 2>$(printf '%q' "$stderr_file")" \
-    | while IFS= read -r line; do
+  run_codex | while IFS= read -r line; do
       # Strip terminal artifacts (carriage return, ^D EOF marker)
       cleaned="${line//$'\r'/}"
       cleaned="${cleaned//$'\004'/}"
@@ -239,11 +253,7 @@ if [[ -n "$session_id" ]]; then
     done
 else
   # New session: JSON output
-  # Use `script` to run codex in a pseudo-TTY so it line-buffers its JSONL output.
-  # Without this, codex block-buffers when stdout is a pipe, preventing real-time progress.
-  script -q /dev/null /bin/bash -c \
-    "cd $(printf '%q' "$workspace") && $(printf '%q ' "${cmd[@]}") < $(printf '%q' "$prompt_file") 2>$(printf '%q' "$stderr_file")" \
-    | while IFS= read -r line; do
+  run_codex | while IFS= read -r line; do
       # Strip terminal artifacts (carriage return, ^D EOF marker)
       cleaned="${line//$'\r'/}"
       cleaned="${cleaned//$'\004'/}"
