@@ -325,15 +325,12 @@ else
         end
     ' < "$json_file" 2>/dev/null
 
-    # 3. Show substantive agent messages only (length > 200 chars).
-    # Intermediate messages are short narration ("I'll read X next", ~50-100 chars).
-    # Actual findings/reports are always longer — this threshold reliably separates
-    # the two without assuming the last message is always the most valuable one
-    # (e.g. a short disclaimer could be last, hiding a 3000-char findings block).
+    # 3. Show all agent messages. Short messages (lint results, "tests failed",
+    # "no changes needed") carry high signal and must not be dropped by a length
+    # threshold. In practice, Codex tends to emit a small number of large blocks
+    # rather than many tiny fragments, so this produces clean output without filtering.
     jq -r '
-      [select(.type == "item.completed" and .item.type == "agent_message") | .item.text]
-      | map(select(length > 200))
-      | .[]
+      select(.type == "item.completed" and .item.type == "agent_message") | .item.text
     ' < "$json_file" 2>/dev/null
   } > "$output_path"
 
