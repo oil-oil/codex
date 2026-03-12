@@ -325,13 +325,15 @@ else
         end
     ' < "$json_file" 2>/dev/null
 
-    # 3. Show only the last agent message (the final summary/conclusion).
-    # Intermediate messages are Codex narrating its exploration steps — useful during
-    # execution but noise when Claude Code reads the finished result. The last message
-    # is where Codex reports what it actually did or found.
+    # 3. Show substantive agent messages only (length > 200 chars).
+    # Intermediate messages are short narration ("I'll read X next", ~50-100 chars).
+    # Actual findings/reports are always longer — this threshold reliably separates
+    # the two without assuming the last message is always the most valuable one
+    # (e.g. a short disclaimer could be last, hiding a 3000-char findings block).
     jq -r '
       [select(.type == "item.completed" and .item.type == "agent_message") | .item.text]
-      | last // empty
+      | map(select(length > 200))
+      | .[]
     ' < "$json_file" 2>/dev/null
   } > "$output_path"
 
