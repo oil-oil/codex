@@ -297,10 +297,15 @@ else
   # This gives full visibility into what codex actually did, not just the last message.
   {
     # 1. Show command executions (shell commands codex ran)
+    # Skip pure file-reading commands (sed/cat/head/tail/nl/rg/grep/awk/wc/find/ls) —
+    # these are Codex's internal exploration and add no signal for Claude Code.
+    # Keep build/test/git/mutation commands that reflect actual work done.
     jq -r '
       select(.type == "item.completed" and .item.type == "command_execution")
       | .item
-      | "### Shell: `" + (.command // "unknown" | gsub("^/bin/zsh -lc "; "") | gsub("^/bin/bash -c "; ""))[0:200] + "`\n" + (.aggregated_output // "" | .[0:500])
+      | ((.command // "") | gsub("^/bin/zsh -lc "; "") | gsub("^/bin/bash -c "; "")) as $cmd
+      | select($cmd | test("^(sed |cat |head |tail |nl |rg |grep |awk |wc |find |ls )") | not)
+      | "### Shell: `" + ($cmd[0:200]) + "`\n" + (.aggregated_output // "" | .[0:500])
     ' < "$json_file" 2>/dev/null
 
     # 2. Show file write/patch operations (tool_call style, if any)
