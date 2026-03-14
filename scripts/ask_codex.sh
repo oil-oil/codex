@@ -230,12 +230,28 @@ printf "%s" "$prompt" > "$prompt_file"
 # detect this upfront and fall back to direct execution — output may arrive all at
 # once at the end, but the task still completes correctly.
 run_codex() {
-  if script -q /dev/null true >/dev/null 2>&1; then
-    script -q /dev/null /bin/bash -c \
-      "cd $(printf '%q' "$workspace") && $(printf '%q ' "${cmd[@]}") < $(printf '%q' "$prompt_file") 2>$(printf '%q' "$stderr_file")"
+  # BSD script (macOS): script [-q] [file [command...]]
+  # util-linux script (Linux): script [-q] -c <command> [file]
+  # Probe the local variant and use matching syntax for PTY allocation.
+  # Falls back to direct execution if neither probe succeeds (e.g. socket stdin).
+  local os
+  os="$(uname -s)"
+  if [[ "$os" == "Darwin" ]]; then
+    if script -q /dev/null true >/dev/null 2>&1; then
+      script -q /dev/null /bin/bash -c \
+        "cd $(printf '%q' "$workspace") && $(printf '%q ' "${cmd[@]}") < $(printf '%q' "$prompt_file") 2>$(printf '%q' "$stderr_file")"
+      return
+    fi
   else
-    (cd "$workspace" && "${cmd[@]}" < "$prompt_file" 2>"$stderr_file")
+    if script -q -c "true" /dev/null >/dev/null 2>&1; then
+      script -q -c \
+        "cd $(printf '%q' "$workspace") && $(printf '%q ' "${cmd[@]}") < $(printf '%q' "$prompt_file") 2>$(printf '%q' "$stderr_file")" \
+        /dev/null
+      return
+    fi
   fi
+  # Fallback: direct execution (no PTY; progress events arrive in batch)
+  (cd "$workspace" && "${cmd[@]}" < "$prompt_file" 2>"$stderr_file")
 }
 
 if [[ -n "$session_id" ]]; then
