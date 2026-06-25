@@ -88,9 +88,16 @@ The script prints on success:
 ```
 session_id=<thread_id>
 output_path=<path to markdown file>
+elapsed=<seconds>s
 ```
 
-Read the file at `output_path` to get CodeX's response. Save `session_id` if you plan follow-up calls.
+Read the file at `output_path` to get Codex's response. Save `session_id` if you plan follow-up calls.
+
+The response file is structured for fast scanning:
+
+- `## Summary` — Codex's final message (what it concluded or did), surfaced first so it isn't buried under the execution log.
+- `## Details` — execution trace (commands run, files written/patched) plus any intermediate narration. Pure read/search commands are filtered out; the section is omitted entirely when there's nothing to show (e.g. a read-only discussion).
+- A footer line with run metrics, e.g. `elapsed 16s · 1 cmds · tokens in=53435 (cached 37504) out=125 reasoning=0`.
 
 ## Workflow
 
@@ -127,6 +134,7 @@ Codex has a built-in image generator — the `image_gen` tool (callable name `im
 - `--reasoning <level>` — Reasoning effort: `low`, `medium`, `high` (default: `medium`). Use `high` for code review, debugging, complex refactoring, or root cause analysis.
 - `--sandbox <mode>` — Override sandbox policy (default: workspace-write via full-auto).
 - `--read-only` — Read-only mode for pure discussion/analysis, no file changes.
+- `--notify` — Fire a desktop notification when a long run finishes (macOS/Linux via the bash script, Windows via PowerShell). Opt-in: also enabled by `CODEX_NOTIFY=1`, and only fires past a minimum duration (`CODEX_NOTIFY_MIN_SECONDS`, default 30) so quick tasks stay quiet. Useful when kicking off a long task and stepping away.
 
 ## Resume mode limitations
 

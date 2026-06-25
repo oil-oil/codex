@@ -25,6 +25,7 @@ Options:
       --sandbox <mode>         Sandbox mode override
       --read-only              Read-only sandbox (no file changes)
       --full-auto              Full-auto mode (default)
+      --notify                 Desktop notification when a long run finishes (macOS/Linux; opt-in)
   -o, --output <path>          Output file path
   -h, --help                   Show this help
 
@@ -95,6 +96,7 @@ reasoning_effort=""
 sandbox_mode=""
 read_only=false
 full_auto=true
+notify=false
 output_path=""
 session_id=""
 file_refs=()
@@ -109,6 +111,7 @@ while [[ $# -gt 0 ]]; do
     --sandbox)        sandbox_mode="${2:-}"; full_auto=false; shift 2 ;;
     --read-only)      read_only=true; full_auto=false; shift ;;
     --full-auto)      full_auto=true; shift ;;
+    --notify)         notify=true; shift ;;
     --session)        session_id="${2:-}"; shift 2 ;;
     -o|--output)      output_path="${2:-}"; shift 2 ;;
     -h|--help)        usage; exit 0 ;;
@@ -254,6 +257,11 @@ run_codex() {
   (cd "$workspace" && "${cmd[@]}" < "$prompt_file" 2>"$stderr_file")
 }
 
+# Errexit is relaxed around the streaming pipeline so a non-zero codex exit still
+# lets us surface captured output / a clear error instead of aborting silently.
+start_ts=$SECONDS
+codex_status=0
+set +e
 if [[ -n "$session_id" ]]; then
   # Resume mode: plain text output (no JSON support)
   run_codex | while IFS= read -r line; do
@@ -264,9 +272,9 @@ if [[ -n "$session_id" ]]; then
       # Write to text_file for later output
       printf '%s\n' "$cleaned" >> "$text_file"
       # Print progress
-      preview="${cleaned:0:120}"
-      echo "[codex] $preview" >&2
+      echo "[codex] ${cleaned:0:120}" >&2
     done
+  codex_status=${PIPESTATUS[0]}
 else
   # New session: JSON output
   run_codex | while IFS= read -r line; do
@@ -283,10 +291,13 @@ else
         *'"item.started"'*|*'"item.completed"'*) print_progress "$cleaned" ;;
       esac
     done
+  codex_status=${PIPESTATUS[0]}
 fi
+set -e
+elapsed=$(( SECONDS - start_ts ))
 
 if [[ -s "$stderr_file" ]] && grep -q '\[ERROR\]' "$stderr_file" 2>/dev/null; then
-  echo "[ERROR] Codex command failed" >&2
+  echo "[ERROR] Codex command failed (exit $codex_status)" >&2
   cat "$stderr_file" >&2
   exit 1
 fi
@@ -306,48 +317,60 @@ if [[ -n "$session_id" ]]; then
     echo "(no response from codex)" > "$output_path"
   fi
 else
-  # New session: Extract thread_id and all messages from JSON stream
+  # New session: Extract thread_id, summary, execution trace, and metrics from JSON stream
   thread_id="$(jq -r 'select(.type == "thread.started") | .thread_id' < "$json_file" | head -1)"
 
-  # Collect all completed items: file changes, tool calls, and agent messages.
-  # This gives full visibility into what codex actually did, not just the last message.
+  # Codex's final agent message is its own summary of the run. Surface it FIRST so the
+  # most important content isn't buried under the execution log.
+  summary_text="$(jq -rs 'map(select(.type == "item.completed" and .item.type == "agent_message") | .item.text) | (last // "")' < "$json_file" 2>/dev/null)"
+
+  # Execution trace: command executions (skipping pure file-reading/searching commands),
+  # file write/patch operations, and any intermediate agent messages (the final one is
+  # already shown as the summary above). Captured into a var so the section is omitted
+  # entirely when empty (e.g. a pure read-only discussion).
+  #
+  # Note: zsh wraps commands in quotes, so after stripping the shell prefix the command
+  # may start with " or ' — the regex accounts for this with [\"']?.
+  details="$(
+    {
+      jq -r '
+        select(.type == "item.completed" and .item.type == "command_execution")
+        | .item
+        | ((.command // "") | gsub("^/bin/zsh -lc "; "") | gsub("^/bin/bash -c "; "")) as $cmd
+        | select($cmd | test("^[\"'"'"']?(sed |cat |head |tail |nl |rg |grep |awk |wc |find |ls )") | not)
+        | "### Shell: `" + ($cmd[0:200]) + "`\n" + (.aggregated_output // "" | .[0:800])
+      ' < "$json_file" 2>/dev/null
+
+      jq -r '
+        select(.type == "item.completed" and .item.type == "tool_call")
+        | .item
+        | if .name == "write_file" then
+            "### File written: " + (.arguments | fromjson | .path // "unknown")
+          elif .name == "patch_file" then
+            "### File patched: " + (.arguments | fromjson | .path // "unknown")
+          elif .name == "shell" then
+            "### Shell: `" + (.arguments | fromjson | .command // "unknown")[0:200] + "`\n" + (.output // "" | .[0:800])
+          else empty
+          end
+      ' < "$json_file" 2>/dev/null
+
+      jq -rs 'map(select(.type == "item.completed" and .item.type == "agent_message") | .item.text) | .[:-1] | .[]' < "$json_file" 2>/dev/null
+    }
+  )"
+
+  # Run metrics: command count + token usage (from the turn.completed event).
+  cmd_count="$(jq -rs '[.[] | select(.type == "item.completed" and .item.type == "command_execution")] | length' < "$json_file" 2>/dev/null)"
+  usage_footer="$(jq -rs '
+    (map(select(.type == "turn.completed")) | last | .usage) as $u
+    | if $u then "tokens in=\($u.input_tokens) (cached \($u.cached_input_tokens)) out=\($u.output_tokens) reasoning=\($u.reasoning_output_tokens)" else "" end
+  ' < "$json_file" 2>/dev/null)"
+
   {
-    # 1. Show command executions — skip pure file-reading/searching commands.
-    # Codex explores the codebase heavily (sed/cat/nl/rg/grep/awk/wc/find/ls), but
-    # those reads produce no signal for Claude Code — it can read files directly if needed.
-    # Keep build, test, git, and mutation commands that reflect actual work done.
-    #
-    # Note: zsh wraps commands in quotes, so after stripping the shell prefix the
-    # command may start with " or ' — the regex accounts for this with [\"']?.
-    jq -r '
-      select(.type == "item.completed" and .item.type == "command_execution")
-      | .item
-      | ((.command // "") | gsub("^/bin/zsh -lc "; "") | gsub("^/bin/bash -c "; "")) as $cmd
-      | select($cmd | test("^[\"'"'"']?(sed |cat |head |tail |nl |rg |grep |awk |wc |find |ls )") | not)
-      | "### Shell: `" + ($cmd[0:200]) + "`\n" + (.aggregated_output // "" | .[0:500])
-    ' < "$json_file" 2>/dev/null
-
-    # 2. Show file write/patch operations (tool_call style, if any)
-    jq -r '
-      select(.type == "item.completed" and .item.type == "tool_call")
-      | .item
-      | if .name == "write_file" then
-          "### File written: " + (.arguments | fromjson | .path // "unknown")
-        elif .name == "patch_file" then
-          "### File patched: " + (.arguments | fromjson | .path // "unknown")
-        elif .name == "shell" then
-          "### Shell: `" + (.arguments | fromjson | .command // "unknown")[0:200] + "`\n" + (.output // "" | .[0:500])
-        else empty
-        end
-    ' < "$json_file" 2>/dev/null
-
-    # 3. Show all agent messages. Short messages (lint results, "tests failed",
-    # "no changes needed") carry high signal and must not be dropped by a length
-    # threshold. In practice, Codex tends to emit a small number of large blocks
-    # rather than many tiny fragments, so this produces clean output without filtering.
-    jq -r '
-      select(.type == "item.completed" and .item.type == "agent_message") | .item.text
-    ' < "$json_file" 2>/dev/null
+    [[ -n "$summary_text" ]] && printf '## Summary\n\n%s\n\n' "$summary_text"
+    [[ -n "$details" ]] && printf '## Details\n\n%s\n\n' "$details"
+    printf -- '---\nelapsed %ss · %s cmds' "$elapsed" "${cmd_count:-0}"
+    [[ -n "$usage_footer" ]] && printf -- ' · %s' "$usage_footer"
+    printf '\n'
   } > "$output_path"
 
   # If nothing was captured, write a fallback
@@ -356,9 +379,33 @@ else
   fi
 fi
 
+# --- Desktop notification for long runs (opt-in via --notify or CODEX_NOTIFY=1) ---
+# Only fires past a minimum duration (default 30s) so quick tasks stay quiet.
+maybe_notify() {
+  [[ "${CODEX_NOTIFY:-0}" == "1" || "$notify" == true ]] || return 0
+  (( elapsed >= ${CODEX_NOTIFY_MIN_SECONDS:-30} )) || return 0
+  local title="Codex done (${elapsed}s)"
+  local body
+  body="$(printf '%s' "${summary_text:-task complete}" | tr '\n' ' ' | cut -c1-120)"
+  case "$(uname -s)" in
+    Darwin)
+      if command -v terminal-notifier >/dev/null 2>&1; then
+        terminal-notifier -title "$title" -message "$body" >/dev/null 2>&1 || true
+      else
+        osascript -e "display notification \"${body//\"/\'}\" with title \"${title//\"/\'}\" sound name \"Glass\"" >/dev/null 2>&1 || true
+      fi
+      ;;
+    Linux)
+      command -v notify-send >/dev/null 2>&1 && notify-send "$title" "$body" >/dev/null 2>&1 || true
+      ;;
+  esac
+}
+maybe_notify
+
 # --- Output results ---
 
 if [[ -n "$thread_id" ]]; then
   echo "session_id=$thread_id"
 fi
 echo "output_path=$output_path"
+echo "elapsed=${elapsed}s"

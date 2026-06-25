@@ -27,6 +27,8 @@ param(
 
     [switch]$FullAuto,
 
+    [switch]$Notify,
+
     [Alias('o')]
     [string]$Output,
 
@@ -58,6 +60,7 @@ Options:
   -Sandbox <mode>              Sandbox mode override
   -ReadOnly                    Read-only sandbox (no file changes)
   -FullAuto                    Full-auto mode (default)
+  -Notify                      Desktop notification when a long run finishes (opt-in)
   -Output, -o <path>           Output file path
   -Help                        Show this help
 
@@ -120,6 +123,27 @@ function Write-File-NoBOM {
     param([string]$Path, [string]$Content)
     $utf8NoBom = New-Object System.Text.UTF8Encoding $false
     [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
+}
+
+function Send-Notification {
+    # Best-effort desktop notification on Windows; never allowed to break the run.
+    param([string]$Title, [string]$Body, [int]$Elapsed)
+    $minSecs = if ($env:CODEX_NOTIFY_MIN_SECONDS) { [int]$env:CODEX_NOTIFY_MIN_SECONDS } else { 30 }
+    if ($Elapsed -lt $minSecs) { return }
+    try {
+        if (Get-Command New-BurntToastNotification -ErrorAction SilentlyContinue) {
+            New-BurntToastNotification -Text $Title, $Body -ErrorAction SilentlyContinue | Out-Null
+            return
+        }
+        Add-Type -AssemblyName System.Windows.Forms -ErrorAction SilentlyContinue
+        Add-Type -AssemblyName System.Drawing -ErrorAction SilentlyContinue
+        $ni = New-Object System.Windows.Forms.NotifyIcon
+        $ni.Icon = [System.Drawing.SystemIcons]::Information
+        $ni.Visible = $true
+        $ni.ShowBalloonTip(5000, $Title, $Body, [System.Windows.Forms.ToolTipIcon]::Info)
+        Start-Sleep -Milliseconds 250
+        $ni.Dispose()
+    } catch { }
 }
 
 # Show help if requested
@@ -339,8 +363,10 @@ try {
     $stdOutEvent = Register-ObjectEvent -InputObject $process -EventName OutputDataReceived -Action $stdOutAction -MessageData $outputData
     $stdErrEvent = Register-ObjectEvent -InputObject $process -EventName ErrorDataReceived -Action $stdErrAction -MessageData $stderrOutput
 
+    $elapsed = 0
     try {
         # Start process
+        $startTime = Get-Date
         $process.Start() | Out-Null
 
         # Begin async reading
@@ -354,6 +380,7 @@ try {
         # Wait for process to exit
         $process.WaitForExit()
         $exitCode = $process.ExitCode
+        $elapsed = [int][Math]::Round(((Get-Date) - $startTime).TotalSeconds)
 
     } finally {
         # Unregister events
@@ -364,10 +391,14 @@ try {
 
     # Process output based on mode
     $threadId = $null
-    $outputContent = @()
+    $finalOutput = ''
+    $summaryText = ''
+    # Commands Codex runs purely to read/search the codebase carry no signal for the
+    # caller — skip them in the trace (they are still counted). Matches the bash script.
+    $readOnlyCmdPattern = '^["'']?(sed |cat |head |tail |nl |rg |grep |awk |wc |find |ls )'
 
     if ($isResumeMode) {
-        # Resume mode: plain text output
+        # Resume mode: plain text output (no JSON structure to summarize)
         $textContent = $textOutput.ToString().Trim()
 
         # Check for errors
@@ -387,8 +418,9 @@ try {
 
         # Use session ID from parameter
         $threadId = $Session
-        if (-not [string]::IsNullOrWhiteSpace($textContent)) {
-            $outputContent += $textContent
+        if ($hasValidOutput) {
+            $finalOutput = $textContent
+            $summaryText = $textContent
         }
     } else {
         # New session mode: JSON output
@@ -410,6 +442,11 @@ try {
             exit 1
         }
 
+        $agentMessages = @()
+        $detailItems = @()
+        $cmdCount = 0
+        $usage = $null
+
         # Extract thread_id and messages from JSON stream
         if (-not [string]::IsNullOrWhiteSpace($jsonText)) {
             # Find thread_id
@@ -425,46 +462,55 @@ try {
                     $obj = $line | ConvertFrom-Json -ErrorAction SilentlyContinue
                     if (-not $obj) { continue }
 
+                    # Token usage from the turn.completed event
+                    if ($obj.type -eq 'turn.completed' -and $obj.usage) {
+                        $usage = $obj.usage
+                        continue
+                    }
+
                     # Process completed items
                     if ($obj.type -eq 'item.completed' -and $obj.item) {
                         $item = $obj.item
 
-                        # Agent messages
+                        # Agent messages (collected; the last one becomes the summary)
                         if ($item.type -eq 'agent_message' -and $item.text) {
-                            $outputContent += $item.text
+                            $agentMessages += $item.text
                         }
 
-                        # Command executions
+                        # Command executions (count all; skip pure read/search ones in the trace)
                         if ($item.type -eq 'command_execution' -and $item.command) {
+                            $cmdCount++
                             $cmd = $item.command -replace '^/bin/(zsh|bash) (-lc|-c) ', ''
-                            $cmdPreview = $cmd.Substring(0, [Math]::Min(200, $cmd.Length))
-                            $outPreview = ''
-                            if ($item.aggregated_output) {
-                                $outPreview = $item.aggregated_output.Substring(0, [Math]::Min(500, $item.aggregated_output.Length))
+                            if ($cmd -notmatch $readOnlyCmdPattern) {
+                                $cmdPreview = $cmd.Substring(0, [Math]::Min(200, $cmd.Length))
+                                $outPreview = ''
+                                if ($item.aggregated_output) {
+                                    $outPreview = $item.aggregated_output.Substring(0, [Math]::Min(800, $item.aggregated_output.Length))
+                                }
+                                $detailItems += "### Shell: ``$cmdPreview```n$outPreview"
                             }
-                            $outputContent += "### Shell: ``$cmdPreview```n$outPreview"
                         }
 
                         # Tool calls (file operations)
                         if ($item.type -eq 'tool_call' -and $item.name) {
-                            $args = $null
+                            $toolArgs = $null
                             try {
-                                $args = $item.arguments | ConvertFrom-Json -ErrorAction SilentlyContinue
+                                $toolArgs = $item.arguments | ConvertFrom-Json -ErrorAction SilentlyContinue
                             } catch {}
 
-                            if ($item.name -eq 'write_file' -and $args.path) {
-                                $outputContent += "### File written: $($args.path)"
+                            if ($item.name -eq 'write_file' -and $toolArgs.path) {
+                                $detailItems += "### File written: $($toolArgs.path)"
                             }
-                            if ($item.name -eq 'patch_file' -and $args.path) {
-                                $outputContent += "### File patched: $($args.path)"
+                            if ($item.name -eq 'patch_file' -and $toolArgs.path) {
+                                $detailItems += "### File patched: $($toolArgs.path)"
                             }
-                            if ($item.name -eq 'shell' -and $args.command) {
-                                $cmdPreview = $args.command.Substring(0, [Math]::Min(200, $args.command.Length))
+                            if ($item.name -eq 'shell' -and $toolArgs.command) {
+                                $cmdPreview = $toolArgs.command.Substring(0, [Math]::Min(200, $toolArgs.command.Length))
                                 $outPreview = ''
                                 if ($item.output) {
-                                    $outPreview = $item.output.Substring(0, [Math]::Min(500, $item.output.Length))
+                                    $outPreview = $item.output.Substring(0, [Math]::Min(800, $item.output.Length))
                                 }
-                                $outputContent += "### Shell: ``$cmdPreview```n$outPreview"
+                                $detailItems += "### Shell: ``$cmdPreview```n$outPreview"
                             }
                         }
                     }
@@ -473,6 +519,27 @@ try {
                 }
             }
         }
+
+        # Codex's final message is its own summary — surface it first. Earlier agent
+        # messages are intermediate narration and go into the details.
+        if ($agentMessages.Count -gt 0) { $summaryText = $agentMessages[-1] }
+        if ($agentMessages.Count -gt 1) {
+            $detailItems += $agentMessages[0..($agentMessages.Count - 2)]
+        }
+
+        $sections = @()
+        if (-not [string]::IsNullOrWhiteSpace($summaryText)) {
+            $sections += "## Summary`n`n$summaryText"
+        }
+        if ($detailItems.Count -gt 0) {
+            $sections += "## Details`n`n" + ($detailItems -join "`n`n")
+        }
+        $footer = "---`nelapsed ${elapsed}s - $cmdCount cmds"
+        if ($usage) {
+            $footer += " - tokens in=$($usage.input_tokens) (cached $($usage.cached_input_tokens)) out=$($usage.output_tokens) reasoning=$($usage.reasoning_output_tokens)"
+        }
+        $sections += $footer
+        $finalOutput = $sections -join "`n`n"
     }
 
     # Ensure output directory exists
@@ -482,10 +549,18 @@ try {
     }
 
     # Write output
-    if ($outputContent.Count -gt 0) {
-        Write-File-NoBOM -Path $Output -Content ($outputContent -join "`n")
+    if (-not [string]::IsNullOrWhiteSpace($finalOutput)) {
+        Write-File-NoBOM -Path $Output -Content $finalOutput
     } else {
         Write-File-NoBOM -Path $Output -Content "(no response from codex)"
+    }
+
+    # Desktop notification for long runs (opt-in via -Notify or CODEX_NOTIFY=1)
+    if ($Notify -or $env:CODEX_NOTIFY -eq '1') {
+        $bodyPreview = if (-not [string]::IsNullOrWhiteSpace($summaryText)) { $summaryText } else { 'task complete' }
+        $bodyPreview = ($bodyPreview -replace "`n", ' ')
+        if ($bodyPreview.Length -gt 120) { $bodyPreview = $bodyPreview.Substring(0, 120) }
+        Send-Notification -Title "Codex done (${elapsed}s)" -Body $bodyPreview -Elapsed $elapsed
     }
 
     # Output results
@@ -493,6 +568,7 @@ try {
         Write-Output "session_id=$threadId"
     }
     Write-Output "output_path=$Output"
+    Write-Output "elapsed=${elapsed}s"
 
 } finally {
     & $cleanupScript
