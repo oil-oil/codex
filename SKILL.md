@@ -1,7 +1,16 @@
 ---
 name: codex
-description: Delegate coding tasks to Codex CLI for execution. Only invoke this skill when the user explicitly asks to use Codex — e.g., "用 codex 来做", "让 codex 执行", "ask codex to...", "codex 帮我写". Do not proactively delegate to Codex for general coding requests the user didn't specifically ask Codex to handle. Codex is an autonomous coding agent with the same tools as Claude (file read/write, grep, bash) — it explores the codebase and implements changes on its own. Claude's role is to understand the problem clearly and frame it well for Codex to execute.
+description: Delegate coding and image-generation tasks to Codex CLI for execution. Only invoke this skill when the user explicitly asks to use Codex — e.g., "用 codex 来做", "让 codex 执行", "ask codex to...", "codex 帮我写", "让 codex 生成/画一张图". Do not proactively delegate to Codex for requests the user didn't specifically ask Codex to handle. Codex is an autonomous agent with the same tools as Claude (file read/write, grep, bash) plus a built-in image_gen tool — it explores the codebase and implements changes on its own. Codex is strong at execution and writing code but comparatively weak at understanding ambiguous problems and high-level design, so Claude's job is to do the understanding and design first, then hand Codex a clear, well-scoped task to execute.
 ---
+
+## What Codex is good and bad at
+
+Codex is an autonomous agent with the same tools as Claude (file read/write, grep, bash) plus a built-in image generator. Match the work to its profile:
+
+- **Strong at execution and coding.** Once a task is well-defined, it implements quickly and competently — writing code, refactoring, applying mechanical changes across many files, wiring boilerplate, and generating images from a clear brief.
+- **Weaker at understanding and design.** It is comparatively poor at disambiguating vague requirements, weighing architectural trade-offs, or judging what the *right* solution is. It tends to take the prompt literally and run with the first plausible interpretation.
+
+So **Claude owns the thinking; Codex owns the doing.** Before delegating, do the understanding and design yourself: figure out what's actually needed, make the key decisions, and hand Codex a clear, well-scoped task with explicit constraints. Don't hand it an open-ended "figure out the best approach" — decide the approach, then let it execute.
 
 ## Critical rules
 
@@ -92,6 +101,15 @@ Read the file at `output_path` to get CodeX's response. Save `session_id` if you
 5. Review the changes in your workspace.
 
 For multi-step projects, use `--session <id>` to continue with full conversation history. For independent parallel tasks, use the Task tool with `run_in_background: true`.
+
+## Generating images
+
+Codex has a built-in image generator — the `image_gen` tool (callable name `image_gen.imagegen`), backed by OpenAI's gpt-image model. (Codex's own tool schema does not expose the exact model id, so don't rely on a specific version.) You invoke it like any other task: just ask Codex, in plain language, to generate the image. There is no extra script flag.
+
+- **Prompt is the only knob.** The tool exposes a single input: a natural-language `prompt`. There are **no structured parameters** for size, aspect ratio, quality, output format, image count, or transparent background. Put all of that art direction *into the prompt text itself* (e.g. "a square logo…", "on a transparent background", "photorealistic, soft morning light"). Editing an attached reference image is mentioned by the tool but is not exposed as a separate parameter.
+- **Output goes outside the workspace.** Generated images are always written as **PNG** to `~/.codex/generated_images/<id>/ig_<hash>.png` — *not* into `--workspace`. Output is large and roughly square (≈1254×1254 observed); you cannot set exact pixel dimensions via a parameter, only describe them in the prompt.
+- **Make Codex hand you the file.** The cleanest pattern is to tell Codex, in the same prompt, to copy the generated PNG to a known path and report it — e.g. "after generating, copy the PNG to ./out/logo.png and print its absolute path." Codex has bash access and will do this. Otherwise, the result is the newest file under `~/.codex/generated_images/`.
+- **Use the default (workspace-write) run.** Generation is confirmed working in the normal run; don't pair it with `--read-only`. It needs network access, and is subject to the image tool's content policy. Exact rate limits and max resolution are not exposed.
 
 ## Failure handling
 
