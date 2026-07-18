@@ -296,10 +296,10 @@ fi
 set -e
 elapsed=$(( SECONDS - start_ts ))
 
-if [[ -s "$stderr_file" ]] && grep -q '\[ERROR\]' "$stderr_file" 2>/dev/null; then
+if (( codex_status != 0 )); then
   echo "[ERROR] Codex command failed (exit $codex_status)" >&2
-  cat "$stderr_file" >&2
-  exit 1
+  [[ -s "$stderr_file" ]] && cat "$stderr_file" >&2
+  exit "$codex_status"
 fi
 
 if [[ -s "$stderr_file" ]]; then

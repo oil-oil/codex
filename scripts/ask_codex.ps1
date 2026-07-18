@@ -389,6 +389,18 @@ try {
         $process.Dispose()
     }
 
+    # A non-zero process status always means the delegated run failed. Codex may
+    # emit a thread id or partial response before failing, so output presence is
+    # not a reliable success signal.
+    if ($exitCode -ne 0) {
+        $stderrText = $stderrOutput.ToString().Trim()
+        [Console]::Error.WriteLine("[ERROR] Codex command failed (exit $exitCode)")
+        if (-not [string]::IsNullOrWhiteSpace($stderrText)) {
+            [Console]::Error.WriteLine($stderrText)
+        }
+        exit $exitCode
+    }
+
     # Process output based on mode
     $threadId = $null
     $finalOutput = ''
@@ -401,24 +413,9 @@ try {
         # Resume mode: plain text output (no JSON structure to summarize)
         $textContent = $textOutput.ToString().Trim()
 
-        # Check for errors
-        $stderrText = $stderrOutput.ToString()
-        $hasValidOutput = -not [string]::IsNullOrWhiteSpace($textContent)
-
-        if ($stderrText -match '\[ERROR\]' -and -not $hasValidOutput) {
-            Write-Error "[ERROR] Codex command failed"
-            Write-Error $stderrText
-            exit 1
-        }
-
-        if ($exitCode -ne 0 -and -not $hasValidOutput) {
-            Write-Error "[ERROR] Codex exited with code $exitCode"
-            exit 1
-        }
-
         # Use session ID from parameter
         $threadId = $Session
-        if ($hasValidOutput) {
+        if (-not [string]::IsNullOrWhiteSpace($textContent)) {
             $finalOutput = $textContent
             $summaryText = $textContent
         }
@@ -426,21 +423,6 @@ try {
         # New session mode: JSON output
         $jsonText = $jsonOutput.ToString()
         Write-File-NoBOM -Path $jsonFile -Content $jsonText
-
-        # Check for errors - but only fail if no valid output was received
-        $stderrText = $stderrOutput.ToString()
-        $hasValidOutput = -not [string]::IsNullOrWhiteSpace($jsonText) -and $jsonText -match '"thread_id"'
-
-        if ($stderrText -match '\[ERROR\]' -and -not $hasValidOutput) {
-            Write-Error "[ERROR] Codex command failed"
-            Write-Error $stderrText
-            exit 1
-        }
-
-        if ($exitCode -ne 0 -and -not $hasValidOutput) {
-            Write-Error "[ERROR] Codex exited with code $exitCode"
-            exit 1
-        }
 
         $agentMessages = @()
         $detailItems = @()
