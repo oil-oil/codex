@@ -1,151 +1,176 @@
 ---
 name: codex
-description: Delegate coding and image-generation tasks to Codex CLI for execution. Only invoke this skill when the user explicitly asks to use Codex — e.g., "用 codex 来做", "让 codex 执行", "ask codex to...", "codex 帮我写", "让 codex 生成/画一张图". Do not proactively delegate to Codex for requests the user didn't specifically ask Codex to handle. Codex is an autonomous agent with the same tools as Claude (file read/write, grep, bash) plus a built-in image_gen tool — it explores the codebase and implements changes on its own. Codex is strong at execution and writing code but comparatively weak at understanding ambiguous problems and high-level design, so Claude's job is to do the understanding and design first, then hand Codex a clear, well-scoped task to execute.
+description: 将编码、代码库探索、实现、评审和验证任务委托给持久化 Codex CLI Agent。仅当用户明确要求“用 Codex”“让 Codex 执行”，或要求继续某个 Codex Agent 任务时使用。
 ---
 
-## What Codex is good and bad at
+# Codex CLI Agent
 
-Codex is an autonomous agent with the same tools as Claude (file read/write, grep, bash) plus a built-in image generator. Match the work to its profile:
+## 核心规则
 
-- **Strong at execution and coding.** Once a task is well-defined, it implements quickly and competently — writing code, refactoring, applying mechanical changes across many files, wiring boilerplate, and generating images from a clear brief.
-- **Weaker at understanding and design.** It is comparatively poor at disambiguating vague requirements, weighing architectural trade-offs, or judging what the *right* solution is. It tends to take the prompt literally and run with the first plausible interpretation.
+- 通过内置包装脚本调用 Codex，不要直接执行 `codex exec`。包装脚本负责捕获 JSONL、显示有效进度、记录会话 ID，并生成精简的 Markdown 结果。
+- 常规调用不选择或传递模型、思考强度与模型提供商。包装脚本会自动选择本机已配置的运行环境：
+  - 存在有效的 `~/.codex-deepseek/config.toml` 时使用 DeepSeek Codex。
+  - 未配置 DeepSeek 时使用默认 Codex。
+- DeepSeek V4 Flash 是纯文本模型。启用 DeepSeek 时不要传 `--image`；由当前 Agent 先识别图片，再把视觉结论作为文字背景交给 Codex。
+- 每个任务先调用一次包装脚本。成功后读取 `output_path`，检查工作区结果，再判断是否需要继续同一会话。
+- 委托提示词应包含目标、完成标准、约束和必要背景，不要规定每一个实现步骤，也不要粘贴大段文件内容。
+- 使用 `--file` 提供 1–4 个重要入口文件，其余路径让 Codex 自己探索。
+- 调用方仍负责范围、安全和最终验收。
 
-So **Claude owns the thinking; Codex owns the doing.** Before delegating, do the understanding and design yourself: figure out what's actually needed, make the key decisions, and hand Codex a clear, well-scoped task with explicit constraints. Don't hand it an open-ended "figure out the best approach" — decide the approach, then let it execute.
+## 委托契约
 
-## Critical rules
+每次只委托一个边界清楚的任务。提示词应简短覆盖：
 
-- Use the bundled shell script rather than calling `codex` CLI directly — the script handles output capture, session tracking, and real-time progress streaming correctly.
-- Run the script once per task. If it succeeds (exit code 0), read the output file and proceed. Don't re-run just because the output seems short — Codex often makes changes quietly without narrating every step.
-- Quote file paths containing `[`, `]`, spaces, or special characters (e.g. `--file "src/app/[locale]/page.tsx"`). Without quotes, zsh treats `[...]` as a glob pattern and fails with "no matches found".
-- **Keep the task prompt to the goal and constraints, not the implementation steps.** Aim for under ~500 words. Codex has the same tools as Claude and will explore the codebase itself — spelling out every file to change or every step tends to constrain it rather than help.
-- **Don't paste file contents into the prompt.** Use `--file` to point Codex to key files — it reads them directly at their current version. Pasting contents wastes tokens and risks passing stale code.
-- **Don't mention this skill or its configuration in the prompt.** Codex doesn't need to know about it.
+- 目标：要修改或查明什么，以及明确不应改动的范围。
+- 完成标准：预期行为、必须覆盖的边界情况。
+- 验证：从仓库配置中确认真实的测试、检查或构建命令，不要只写“运行测试”。
+- 安全边界：不执行 `git add`、`git commit`，不顺手重构无关代码。
+- 最终报告：说明改动与原因、涉及文件、验证结果，以及仍需决定或未完成的事项。
 
-## How to call the script
+缺少的仓库事实应先查找；无法确认时明确报告，不要猜测。评审或诊断任务要求结论引用代码证据，并区分事实与推断。
 
-### Linux/macOS (bash)
+## 包装脚本
 
-The script path is:
+macOS 与 Linux：
 
+```text
+~/.agents/skills/codex/scripts/ask_codex.sh
 ```
-~/.claude/skills/codex/scripts/ask_codex.sh
+
+Windows：
+
+```text
+~/.agents/skills/codex/scripts/ask_codex.ps1
 ```
 
-Minimal invocation:
+`~/.claude/skills/codex` 可以作为兼容软链接指向同一个 Skill。
+
+## 常用调用
+
+新任务：
 
 ```bash
-~/.claude/skills/codex/scripts/ask_codex.sh "Your request in natural language"
+~/.agents/skills/codex/scripts/ask_codex.sh "实现请求的改动"
 ```
 
-With file context:
+指定工作区和入口文件：
 
 ```bash
-~/.claude/skills/codex/scripts/ask_codex.sh "Refactor these components to use the new API" \
-  --file src/components/UserList.tsx \
-  --file src/components/UserDetail.tsx
+~/.agents/skills/codex/scripts/ask_codex.sh "重构这些组件并完成验证" \
+  --workspace "/path/to/repo" \
+  --file "src/components/UserList.tsx" \
+  --file "src/components/UserDetail.tsx"
 ```
 
-Multi-turn conversation (continue a previous session):
+只读探索或评审：
 
 ```bash
-~/.claude/skills/codex/scripts/ask_codex.sh "Also add retry logic with exponential backoff" \
-  --session <session_id from previous run>
+~/.agents/skills/codex/scripts/ask_codex.sh "追踪当前请求路径并引用文件和行号" \
+  --workspace "/path/to/repo" \
+  --read-only
 ```
 
-### Windows (PowerShell)
+继续已有会话：
 
-The script path is:
-
-```
-~/.claude/skills/codex/scripts/ask_codex.ps1
-```
-
-Minimal invocation:
-
-```powershell
-& ~/.claude/skills/codex/scripts/ask_codex.ps1 "Your request in natural language"
+```bash
+~/.agents/skills/codex/scripts/ask_codex.sh "继续修复刚才发现的问题" \
+  --session <session_id>
 ```
 
-With file context:
+使用默认 Codex 时，附加图片并要求结构化结果：
 
-```powershell
-& ~/.claude/skills/codex/scripts/ask_codex.ps1 "Refactor these components to use the new API" `
-  -f src/components/UserList.tsx `
-  -f src/components/UserDetail.tsx
+```bash
+~/.agents/skills/codex/scripts/ask_codex.sh "比较截图与当前实现" \
+  --image "/path/to/screenshot.png" \
+  --output-schema "/path/to/result.schema.json" \
+  --read-only
 ```
 
-Multi-turn conversation (continue a previous session):
+## 工作流程
 
-```powershell
-& ~/.claude/skills/codex/scripts/ask_codex.ps1 "Also add retry logic with exponential backoff" `
-  -Session <session_id from previous run>
-```
+1. 读取足够的本地上下文，明确目标和重要限制。
+2. 根据任务选择只读或工作区写入权限。
+3. 使用包装脚本派发一段聚焦的提示词，通常控制在 500 字以内。
+4. 读取脚本返回的 `output_path`。
+5. 先检查测试是否被删除、跳过或弱化，再检查工作区改动是否越界。
+6. 重新运行真实验证命令；Codex 的“测试通过”只是报告，不能替代调用方验收。
+7. 检查硬编码成功结果、吞掉异常、未经确认的 API、死代码和无调用方的抽象。
+8. 需要返工时继续原会话，只发送新发现和修正要求，不重复整个任务。
 
-### Output format
+分析、讨论、探索和评审任务使用 `--read-only`。实现任务默认使用 `workspace-write`。一次性测试可以使用 `--ephemeral`。
 
-The script prints on success:
+## 思考强度
 
-```
+正常调用不要传 `--reasoning`，由运行环境使用默认的 `high`。只有确实需要改变默认行为时才指定：
+
+- `high`：默认档位，适合绝大多数编码、探索、实现和评审任务；无需显式传递。
+- `max`：仅用于跨模块架构、疑难故障、复杂安全评审，或 `high` 已尝试但结论仍明显不足的任务。
+- `low`：仅当用户明确优先考虑速度或成本，并且任务是简单、机械、低风险操作时使用。
+
+DeepSeek V4 Flash 只支持 `low`、`high` 和 `max`。DeepSeek 运行环境启用时，不要传递 `medium`、`xhigh`、`minimal` 或 `ultra`。不要仅因为任务描述较长就自动使用 `max`；先收窄目标和上下文。
+
+## 输出
+
+成功后脚本输出：
+
+```text
 session_id=<thread_id>
-output_path=<path to markdown file>
+runtime=<default|deepseek>
+output_path=<path>
+result_path=<path>
+events_path=<path>
 elapsed=<seconds>s
 ```
 
-Read the file at `output_path` to get Codex's response. Save `session_id` if you plan follow-up calls.
+Markdown 结果包含：
 
-The response file is structured for fast scanning:
+- `## Summary`：Codex 的最终结论。
+- `## Details`：有意义的命令、写入、补丁和中间消息；纯读取与搜索会被省略。
+- 耗时、命令数和可用的 token 使用信息。
 
-- `## Summary` — Codex's final message (what it concluded or did), surfaced first so it isn't buried under the execution log.
-- `## Details` — execution trace (commands run, files written/patched) plus any intermediate narration. Pure read/search commands are filtered out; the section is omitted entirely when there's nothing to show (e.g. a read-only discussion).
-- A footer line with run metrics, e.g. `elapsed 16s · 1 cmds · tokens in=53435 (cached 37504) out=125 reasoning=0`.
+使用 `--output-schema` 时，`Summary` 包含符合指定 JSON Schema 的结果。
 
-## Workflow
+每次运行使用独立目录，避免并行任务覆盖结果。`result_path` 是原子写入的结构化状态，包含 `completed` 或 `failed`、退出码、运行环境、会话 ID、最终消息、耗时及错误尾部；`events_path` 保留原始 JSONL，便于失败诊断和恢复。调用方平时只需读取 `output_path`，出现异常时再读取另外两个文件。
 
-1. Understand the problem: read the key files to grasp what's broken or needed. Focus on being able to describe the problem and goal clearly — you don't need to design the full solution or enumerate every affected file. Codex will explore the codebase itself.
-2. Run the script with a focused task description: the goal, key constraints, and any non-obvious context. For discussion or analysis without changes, use `--read-only`.
-3. Pass 1-4 entry-point files with `--file` as starting hints. Codex has the same tools as Claude and will discover related files on its own — no need to enumerate everything upfront.
-4. Read the output — Codex executes changes and reports what it did.
-5. Review the changes in your workspace.
+## 图片
 
-For multi-step projects, use `--session <id>` to continue with full conversation history. For independent parallel tasks, use the Task tool with `run_in_background: true`.
+`--image` 只用于默认 Codex 运行环境。DeepSeek V4 Flash 当前没有视觉识别能力；若已经配置 DeepSeek，应由调用 Skill 的 Agent 自己查看图片，并把页面结构、文字、颜色、尺寸和异常点等必要视觉信息写进委托提示词。包装脚本会拒绝把图片发送给 DeepSeek，避免静默得到错误结果。
 
-## Generating images
+需要透明背景图片时：
 
-Codex has a built-in image generator — the `image_gen` tool (callable name `image_gen.imagegen`), backed by OpenAI's gpt-image model. (Codex's own tool schema does not expose the exact model id, so don't rely on a specific version.) You invoke it like any other task: just ask Codex, in plain language, to generate the image. There is no extra script flag.
+1. 先明确要求生成透明背景 PNG。
+2. 指定最终输出路径，并要求 Codex 报告该路径。
+3. 只有原生透明效果不可靠时，才使用灰底抠图工具：
 
-- **Prompt is the only knob.** The tool exposes a single input: a natural-language `prompt`. There are **no structured parameters** for size, aspect ratio, quality, output format, image count, or transparent background. Put all of that art direction *into the prompt text itself* (e.g. "a square logo…", "on a transparent background", "photorealistic, soft morning light"). Editing an attached reference image is mentioned by the tool but is not exposed as a separate parameter.
-- **Output goes outside the workspace.** Generated images are always written as **PNG** to `~/.codex/generated_images/<id>/ig_<hash>.png` — *not* into `--workspace`. Output is large and roughly square (≈1254×1254 observed); you cannot set exact pixel dimensions via a parameter, only describe them in the prompt.
-- **Make Codex hand you the file.** The cleanest pattern is to tell Codex, in the same prompt, to copy the generated PNG to a known path and report it — e.g. "after generating, copy the PNG to ./out/logo.png and print its absolute path." Codex has bash access and will do this. Otherwise, the result is the newest file under `~/.codex/generated_images/`.
-- **Use the default (workspace-write) run.** Generation is confirmed working in the normal run; don't pair it with `--read-only`. It needs network access, and is subject to the image tool's content policy. Exact rate limits and max resolution are not exposed.
+```bash
+python3 ~/.agents/skills/codex/scripts/cutout.py input.png output.png
+```
 
-## Failure handling
+使用该后备方案时，让图像生成在纯 `#808080` 背景上，执行抠图后确认输出为 RGBA，并检查边缘质量。
 
-- **`script: tcgetattr/ioctl: Operation not supported on socket`** (exit code 1): the `script` command probes stdin with `tcgetattr` at startup and only tolerates `ENOTTY`/`ENODEV` errors. When Claude Code connects stdin via a socketpair, the kernel returns `EOPNOTSUPP` instead — which `script` doesn't whitelist, so it exits immediately. The script detects this automatically by probing with `script -q /dev/null true` first and falls back to direct execution. Update to the latest version if you still see this error.
-- **Exit code 137**: the task was interrupted (user cancel or OOM). Not a Codex bug — retry or break the task into smaller pieces.
-- **Any non-zero Codex exit**: the wrapper reports the captured diagnostics and returns the same non-zero status, even if Codex emitted a thread ID or partial response first. Treat the run as failed and inspect the workspace before retrying.
-- **`ERROR codex_core::codex: failed to load skill ...`** in stderr: one of Codex's own installed skills has a broken YAML file. This warning is harmless and doesn't affect the current task — ignore it.
-- **`(no response from codex)`** in the output file: Codex ran but produced no readable output. Check stderr for clues; the task may have hit a sandbox restriction.
+## 对外参数
 
-## Options
+- `--workspace <path>`：工作目录，默认使用当前目录。
+- `--file <path>`：优先入口文件，可重复使用。
+- `--image <path>`：附加图片，可重复使用。
+- `--session <id>`：继续已有会话。
+- `--reasoning <low|high|max>`：特殊情况下覆盖默认思考强度，常规调用不要传递。
+- `--sandbox <mode>`：覆盖新会话的沙箱模式。
+- `--read-only`：只读新会话。
+- `--full-auto`：使用默认的工作区写入模式。
+- `--ephemeral`：不持久化会话。
+- `--output-schema <path>`：约束最终输出结构。
+- `--notify`：长任务结束后发送通知。
+- `--output <path>`：指定 Markdown 结果路径。
 
-- `--workspace <path>` — Target workspace directory (defaults to current directory).
-- `--file <path>` — Point CodeX to key entry-point files (repeatable, workspace-relative or absolute). Don't duplicate their contents in the prompt.
-- `--session <id>` — Resume a previous session for multi-turn conversation.
-- `--model <name>` — Override model (default: uses Codex config).
-- `--reasoning <level>` — Reasoning effort: `low`, `medium`, `high` (default: `medium`). Use `high` for code review, debugging, complex refactoring, or root cause analysis.
-- `--sandbox <mode>` — Override sandbox policy (default: workspace-write via full-auto).
-- `--read-only` — Read-only mode for pure discussion/analysis, no file changes.
-- `--notify` — Fire a desktop notification when a long run finishes (macOS/Linux via the bash script, Windows via PowerShell). Opt-in: also enabled by `CODEX_NOTIFY=1`, and only fires past a minimum duration (`CODEX_NOTIFY_MIN_SECONDS`, default 30) so quick tasks stay quiet. Useful when kicking off a long task and stepping away.
+## 会话约束
 
-## Resume mode limitations
+续接会话会保留原工作区上下文和权限，因此不要把 `--read-only` 或 `--sandbox` 与 `--session` 同时使用。DeepSeek 配置启用后，会话文件位于独立的 `~/.codex-deepseek`；继续会话时应保持该运行环境可用。
 
-When using `--session` to resume a previous conversation, note these limitations:
+## 失败处理
 
-- **Must run in a git repository** — The `codex exec resume` command requires a git-trusted directory. It does not support `--skip-git-repo-check`.
-- **Limited options** — Resume mode only supports `-c/--config` and `--last`. The following options are **not supported** in resume mode:
-  - `--sandbox`
-  - `--full-auto`
-  - `--read-only`
-  - `--model`
-  - `--workspace` (resumes in the original session's context)
-- **Text output only** — Resume mode returns plain text instead of JSON-structured output.
+- 非零退出码、`turn.failed` 或明确错误事件都视为失败。
+- 失败运行也会输出 `result_path` 与 `events_path`；先读取结构化错误和事件尾部，再决定缩小任务、修正配置或续接会话。
+- 退出码 137 通常表示进程被中断或终止；先检查资源压力或缩小任务范围，再决定是否重试。
+- Skill 或插件加载警告通常不影响任务，除非 Codex 回合本身失败。
+- Bash 包装脚本会检测 PTY 支持；不支持时回退到直接执行，任务仍可完成，但进度可能集中在结束时返回。

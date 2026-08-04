@@ -1,1 +1,4 @@
+.DS_Store
 .runtime/
+scripts/__pycache__/
+*.pyc

@@ -14,18 +14,27 @@ param(
     [Alias('f')]
     [string[]]$File,
 
+    [Alias('i')]
+    [string[]]$Image,
+
     [string]$Session,
 
     [string]$Model,
 
-    [ValidateSet('low', 'medium', 'high')]
-    [string]$Reasoning = 'medium',
+    [ValidateSet('minimal', 'low', 'medium', 'high', 'xhigh', 'max')]
+    [string]$Reasoning = 'high',
+
+    [switch]$Fast,
 
     [string]$Sandbox,
 
     [switch]$ReadOnly,
 
     [switch]$FullAuto,
+
+    [switch]$Ephemeral,
+
+    [string]$OutputSchema,
 
     [switch]$Notify,
 
@@ -49,6 +58,7 @@ Task input:
 
 File context (optional, repeatable):
   -File, -f <path>             Priority file path
+  -Image, -i <path>            Image to attach to the default Codex runtime
 
 Multi-turn:
   -Session <id>                Resume a previous session (thread_id from prior run)
@@ -56,17 +66,23 @@ Multi-turn:
 Options:
   -Workspace, -w <path>        Workspace directory (default: current directory)
   -Model <name>                Model override
-  -Reasoning <level>           Reasoning effort: low, medium, high (default: medium)
+  -Reasoning <level>           minimal, low, medium, high, xhigh, max (default: high)
+  -Fast                        Use the Fast service tier (higher usage/cost)
   -Sandbox <mode>              Sandbox mode override
   -ReadOnly                    Read-only sandbox (no file changes)
-  -FullAuto                    Full-auto mode (default)
+  -FullAuto                    Compatibility alias for workspace-write (default)
+  -Ephemeral                   Do not persist the Codex session
+  -OutputSchema <path>         Require the final response to match a JSON Schema
   -Notify                      Desktop notification when a long run finishes (opt-in)
   -Output, -o <path>           Output file path
   -Help                        Show this help
 
 Output (on success):
   session_id=<thread_id>       Use with -Session for follow-up calls
+  runtime=<default|deepseek>   Automatically selected Codex runtime
   output_path=<file>           Path to response markdown
+  result_path=<file>           Structured run status and metadata
+  events_path=<file>           Raw Codex JSONL events for diagnostics
 
 Examples:
   # New task (positional)
@@ -77,6 +93,10 @@ Examples:
 
   # Continue conversation
   ask_codex.ps1 "Also add retry logic" -Session <id>
+
+  # Read-only structured analysis with an attached image (default runtime only)
+  ask_codex.ps1 "Compare screenshot and implementation" -ReadOnly `
+    -Image screenshot.png -OutputSchema result.schema.json
 '@
 }
 
@@ -91,7 +111,46 @@ function Test-Command {
 function Trim-Whitespace {
     param([string]$Text)
     if ([string]::IsNullOrEmpty($Text)) { return '' }
-    return $Text.Trim() -replace '\s+', ' '
+    return $Text.Trim()
+}
+
+function Initialize-CodexRuntime {
+    $script:SelectedRuntime = 'default'
+    $userHome = [Environment]::GetFolderPath('UserProfile')
+    $deepSeekHome = if ($env:CODEX_DEEPSEEK_HOME) {
+        $env:CODEX_DEEPSEEK_HOME
+    } else {
+        Join-Path $userHome '.codex-deepseek'
+    }
+    $configPath = Join-Path $deepSeekHome 'config.toml'
+
+    if (-not (Test-Path $configPath -PathType Leaf)) {
+        if ($env:CODEX_DEEPSEEK_HOME) {
+            Write-Error "[ERROR] CODEX_DEEPSEEK_HOME is set but config.toml is missing: $configPath"
+            exit 1
+        }
+        return
+    }
+
+    $modelsPath = Join-Path $deepSeekHome 'models.json'
+    if (-not (Test-Path $modelsPath -PathType Leaf)) {
+        Write-Error "[ERROR] DeepSeek Codex is configured but models.json is missing: $modelsPath"
+        exit 1
+    }
+
+    $env:CODEX_HOME = $deepSeekHome
+    $script:SelectedRuntime = 'deepseek'
+
+    if (-not $env:DEEPSEEK_API_KEY -and (Get-Command security -ErrorAction SilentlyContinue)) {
+        $account = [Environment]::UserName
+        $key = (& security find-generic-password -a $account -s codex-deepseek-api-key -w 2>$null)
+        if ($key) { $env:DEEPSEEK_API_KEY = $key.Trim() }
+    }
+
+    if (-not $env:DEEPSEEK_API_KEY) {
+        Write-Error '[ERROR] DeepSeek Codex is configured but DEEPSEEK_API_KEY is unavailable.'
+        exit 1
+    }
 }
 
 function Resolve-FileRef {
@@ -125,6 +184,52 @@ function Write-File-NoBOM {
     [System.IO.File]::WriteAllText($Path, $Content, $utf8NoBom)
 }
 
+function Write-RunResult {
+    param(
+        [string]$Path,
+        [string]$Status,
+        [int]$ExitCode,
+        [string]$Runtime,
+        [string]$SessionId,
+        [string]$FinalMessage,
+        [string]$OutputPath,
+        [string]$EventsPath,
+        [string]$StderrPath,
+        [int]$Elapsed,
+        [string]$StartedAt,
+        [string]$ErrorMessage
+    )
+
+    $stderrTail = $null
+    if ($Status -ne 'completed' -and (Test-Path $StderrPath -PathType Leaf)) {
+        $stderrTail = ((Get-Content $StderrPath -Tail 20 -ErrorAction SilentlyContinue) -join "`n").Trim()
+        if ([string]::IsNullOrWhiteSpace($stderrTail)) { $stderrTail = $null }
+    }
+
+    $result = [ordered]@{
+        schema = 'codex-skill.run.v1'
+        status = $Status
+        exit_code = $ExitCode
+        runtime = $Runtime
+        run_id = (Split-Path (Split-Path $Path -Parent) -Leaf)
+        workspace = $script:RunWorkspace
+        session_id = if ([string]::IsNullOrEmpty($SessionId)) { $null } else { $SessionId }
+        final_message = if ($null -eq $FinalMessage) { '' } else { $FinalMessage }
+        output_path = $OutputPath
+        events_path = $EventsPath
+        stderr_path = $StderrPath
+        elapsed_seconds = $Elapsed
+        started_at = $StartedAt
+        finished_at = (Get-Date).ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
+        stderr_tail = $stderrTail
+        error = if ([string]::IsNullOrEmpty($ErrorMessage)) { $null } else { $ErrorMessage }
+    }
+
+    $temporaryPath = "$Path.tmp.$PID"
+    Write-File-NoBOM -Path $temporaryPath -Content ($result | ConvertTo-Json -Depth 5)
+    Move-Item -Path $temporaryPath -Destination $Path -Force
+}
+
 function Send-Notification {
     # Best-effort desktop notification on Windows; never allowed to break the run.
     param([string]$Title, [string]$Body, [int]$Elapsed)
@@ -155,6 +260,7 @@ if ($Help) {
 # Check required commands
 Test-Command 'codex'
 Test-Command 'jq'
+Initialize-CodexRuntime
 
 # Resolve task text from either positional or named parameter
 if ([string]::IsNullOrEmpty($Task) -and -not [string]::IsNullOrEmpty($TaskText)) {
@@ -167,6 +273,7 @@ if (-not (Test-Path $Workspace -PathType Container)) {
     exit 1
 }
 $Workspace = (Resolve-Path $Workspace).Path
+$script:RunWorkspace = $Workspace
 
 # Validate task
 $Task = Trim-Whitespace $Task
@@ -175,15 +282,63 @@ if ([string]::IsNullOrEmpty($Task)) {
     exit 1
 }
 
-# Prepare output path
-if ([string]::IsNullOrEmpty($Output)) {
-    $timestamp = (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')
-    $skillDir = Split-Path $PSScriptRoot -Parent
-    $runtimeDir = Join-Path $skillDir '.runtime'
-    if (-not (Test-Path $runtimeDir)) {
-        New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
+if ($script:SelectedRuntime -eq 'deepseek' -and $Reasoning -notin @('low', 'high', 'max')) {
+    Write-Error '[ERROR] DeepSeek supports only low, high, and max reasoning. Omit -Reasoning to use high.'
+    exit 1
+}
+
+if (-not [string]::IsNullOrEmpty($Session) -and ($ReadOnly -or $FullAuto -or -not [string]::IsNullOrEmpty($Sandbox))) {
+    Write-Error "[ERROR] Codex resume cannot override sandbox mode; it keeps the original session permissions."
+    exit 1
+}
+
+if (-not [string]::IsNullOrEmpty($OutputSchema)) {
+    if (-not [System.IO.Path]::IsPathRooted($OutputSchema)) {
+        $OutputSchema = Join-Path $Workspace $OutputSchema
     }
-    $Output = Join-Path $runtimeDir "$timestamp.md"
+    if (-not (Test-Path $OutputSchema -PathType Leaf)) {
+        Write-Error "[ERROR] Output schema not found: $OutputSchema"
+        exit 1
+    }
+    $OutputSchema = (Resolve-Path $OutputSchema).Path
+}
+
+$resolvedImages = @()
+if ($script:SelectedRuntime -eq 'deepseek' -and @($Image).Count -gt 0) {
+    Write-Error '[ERROR] DeepSeek V4 Flash is text-only and cannot receive -Image. Inspect the image in the calling Agent, then pass the visual findings as text.'
+    exit 1
+}
+foreach ($imagePath in @($Image)) {
+    if ([string]::IsNullOrWhiteSpace($imagePath)) { continue }
+    $resolvedImage = $imagePath
+    if (-not [System.IO.Path]::IsPathRooted($resolvedImage)) {
+        $resolvedImage = Join-Path $Workspace $resolvedImage
+    }
+    if (-not (Test-Path $resolvedImage -PathType Leaf)) {
+        Write-Error "[ERROR] Image not found: $resolvedImage"
+        exit 1
+    }
+    $resolvedImages += (Resolve-Path $resolvedImage).Path
+}
+
+# Prepare unique run artifacts
+$timestamp = (Get-Date).ToUniversalTime().ToString('yyyyMMdd-HHmmss')
+$runtimeDir = if ($env:CODEX_SKILL_STATE_HOME) {
+    $env:CODEX_SKILL_STATE_HOME
+} else {
+    Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'codex-skill'
+}
+if (-not (Test-Path $runtimeDir)) {
+    New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
+}
+$runId = [guid]::NewGuid().ToString('N').Substring(0, 8)
+$runDir = Join-Path $runtimeDir "run-$timestamp-$runId"
+New-Item -ItemType Directory -Path $runDir -Force | Out-Null
+$resultPath = Join-Path $runDir 'result.json'
+$eventsPath = Join-Path $runDir 'events.jsonl'
+$stderrPath = Join-Path $runDir 'stderr.log'
+if ([string]::IsNullOrEmpty($Output)) {
+    $Output = Join-Path $runDir 'result.md'
 }
 
 # Build file context block
@@ -207,49 +362,36 @@ if (-not [string]::IsNullOrEmpty($fileBlock)) {
 
 # Build codex command
 $codexArgs = @()
+$commonArgs = @('--json', '--skip-git-repo-check', '-c', "model_reasoning_effort=`"$Reasoning`"")
+if ($Fast) {
+    $commonArgs += '-c', 'service_tier="fast"', '-c', 'features.fast_mode=true'
+}
 
 if (-not [string]::IsNullOrEmpty($Session)) {
-    # Resume mode: continue a previous session
-    # Note: resume only supports -c/--config and --last flags (no --json, --sandbox, etc.)
-    $codexArgs = @('exec', 'resume', '-c', "model_reasoning_effort=`"$Reasoning`"", '-c', 'skip_git_repo_check=true')
-    $codexArgs += $Session
+    # Current Codex resume supports JSON, model/image/schema overrides, and non-git workspaces.
+    $codexArgs = @('exec', 'resume') + $commonArgs
+    if (-not [string]::IsNullOrEmpty($Model)) { $codexArgs += '-m', $Model }
+    if ($Ephemeral) { $codexArgs += '--ephemeral' }
+    if (-not [string]::IsNullOrEmpty($OutputSchema)) { $codexArgs += '--output-schema', $OutputSchema }
+    foreach ($resolvedImage in $resolvedImages) { $codexArgs += '--image', $resolvedImage }
+    $codexArgs += $Session, '-'
 } else {
     # New session
-    $codexArgs = @('exec', '--cd', $Workspace, '--skip-git-repo-check', '--json', '-c', "model_reasoning_effort=`"$Reasoning`"")
+    $codexArgs = @('exec', '--cd', $Workspace) + $commonArgs
     if ($ReadOnly) {
         $codexArgs += '--sandbox', 'read-only'
     } elseif (-not [string]::IsNullOrEmpty($Sandbox)) {
         $codexArgs += '--sandbox', $Sandbox
-    } elseif ($FullAuto) {
-        $codexArgs += '--full-auto'
+    } else {
+        $codexArgs += '--sandbox', 'workspace-write'
     }
-    if (-not [string]::IsNullOrEmpty($Model)) {
-        $codexArgs += '-m', $Model
-    }
+    if (-not [string]::IsNullOrEmpty($Model)) { $codexArgs += '-m', $Model }
+    if ($Ephemeral) { $codexArgs += '--ephemeral' }
+    if (-not [string]::IsNullOrEmpty($OutputSchema)) { $codexArgs += '--output-schema', $OutputSchema }
+    foreach ($resolvedImage in $resolvedImages) { $codexArgs += '--image', $resolvedImage }
 }
 
-# Create temp files
-$tempDir = [System.IO.Path]::GetTempPath()
-$guid = [guid]::NewGuid().ToString()
-$stderrFile = Join-Path $tempDir "codex_stderr_$guid.txt"
-$jsonFile = Join-Path $tempDir "codex_json_$guid.txt"
-$promptFile = Join-Path $tempDir "codex_prompt_$guid.txt"
-
-# Cleanup function
-$cleanupScript = {
-    Remove-Item -Path $stderrFile -Force -ErrorAction SilentlyContinue
-    Remove-Item -Path $jsonFile -Force -ErrorAction SilentlyContinue
-    Remove-Item -Path $promptFile -Force -ErrorAction SilentlyContinue
-}
-
-try {
-    # Write prompt to temp file (UTF-8 without BOM)
-    Write-File-NoBOM -Path $promptFile -Content $prompt
-
-    # Initialize json file
-    Write-File-NoBOM -Path $jsonFile -Content ''
-
-    # Setup process with async reading for real-time output
+# Setup process with async reading for real-time output
     # On Windows, codex is installed as a .ps1 script, so we need to use cmd.exe or pwsh to run it
     $psi = New-Object System.Diagnostics.ProcessStartInfo
     if ($IsWindows -or $PSVersionTable.PSVersion.Major -le 5) {
@@ -275,14 +417,10 @@ try {
     # StringBuilder for collecting output
     $jsonOutput = New-Object System.Text.StringBuilder
     $stderrOutput = New-Object System.Text.StringBuilder
-    $outputLock = New-Object Object
-
-    # Event handler script blocks
-    $jsonOutputRef = $jsonOutput
-    $stderrOutputRef = $stderrOutput
 
     # Register event handlers for async reading
-    $isResumeMode = -not [string]::IsNullOrEmpty($Session)
+    # New and resumed sessions both use JSONL on current Codex CLI.
+    $isResumeMode = $false
     $textOutput = New-Object System.Text.StringBuilder
 
     $stdOutAction = {
@@ -367,6 +505,7 @@ try {
     try {
         # Start process
         $startTime = Get-Date
+        $startedAt = $startTime.ToUniversalTime().ToString('yyyy-MM-ddTHH:mm:ssZ')
         $process.Start() | Out-Null
 
         # Begin async reading
@@ -389,18 +528,6 @@ try {
         $process.Dispose()
     }
 
-    # A non-zero process status always means the delegated run failed. Codex may
-    # emit a thread id or partial response before failing, so output presence is
-    # not a reliable success signal.
-    if ($exitCode -ne 0) {
-        $stderrText = $stderrOutput.ToString().Trim()
-        [Console]::Error.WriteLine("[ERROR] Codex command failed (exit $exitCode)")
-        if (-not [string]::IsNullOrWhiteSpace($stderrText)) {
-            [Console]::Error.WriteLine($stderrText)
-        }
-        exit $exitCode
-    }
-
     # Process output based on mode
     $threadId = $null
     $finalOutput = ''
@@ -409,20 +536,85 @@ try {
     # caller — skip them in the trace (they are still counted). Matches the bash script.
     $readOnlyCmdPattern = '^["'']?(sed |cat |head |tail |nl |rg |grep |awk |wc |find |ls )'
 
+    $capturedJson = $jsonOutput.ToString()
+    $capturedStderr = $stderrOutput.ToString()
+    Write-File-NoBOM -Path $eventsPath -Content $capturedJson
+    Write-File-NoBOM -Path $stderrPath -Content $capturedStderr
+
     if ($isResumeMode) {
         # Resume mode: plain text output (no JSON structure to summarize)
         $textContent = $textOutput.ToString().Trim()
 
+        # Check for errors
+        $stderrText = $stderrOutput.ToString()
+        $hasValidOutput = -not [string]::IsNullOrWhiteSpace($textContent)
+
+        if ($stderrText -match '\[ERROR\]' -and -not $hasValidOutput) {
+            Write-RunResult -Path $resultPath -Status 'failed' -ExitCode 1 `
+                -Runtime $script:SelectedRuntime -SessionId $Session -FinalMessage '' `
+                -OutputPath $Output -EventsPath $eventsPath -StderrPath $stderrPath `
+                -Elapsed $elapsed -StartedAt $startedAt -ErrorMessage 'Codex command failed'
+            Write-Output "status=failed"
+            Write-Output "runtime=$script:SelectedRuntime"
+            Write-Output "session_id=$Session"
+            Write-Output "result_path=$resultPath"
+            Write-Output "events_path=$eventsPath"
+            Write-Error "[ERROR] Codex command failed"
+            Write-Error $stderrText
+            exit 1
+        }
+
+        if ($exitCode -ne 0 -and -not $hasValidOutput) {
+            Write-RunResult -Path $resultPath -Status 'failed' -ExitCode $exitCode `
+                -Runtime $script:SelectedRuntime -SessionId $Session -FinalMessage '' `
+                -OutputPath $Output -EventsPath $eventsPath -StderrPath $stderrPath `
+                -Elapsed $elapsed -StartedAt $startedAt -ErrorMessage "Codex exited with code $exitCode"
+            Write-Output "status=failed"
+            Write-Output "runtime=$script:SelectedRuntime"
+            Write-Output "session_id=$Session"
+            Write-Output "result_path=$resultPath"
+            Write-Output "events_path=$eventsPath"
+            Write-Error "[ERROR] Codex exited with code $exitCode"
+            exit 1
+        }
+
         # Use session ID from parameter
         $threadId = $Session
-        if (-not [string]::IsNullOrWhiteSpace($textContent)) {
+        if ($hasValidOutput) {
             $finalOutput = $textContent
             $summaryText = $textContent
         }
     } else {
         # New session mode: JSON output
         $jsonText = $jsonOutput.ToString()
-        Write-File-NoBOM -Path $jsonFile -Content $jsonText
+
+        if ($jsonText -match '"thread_id"\s*:\s*"([^"]+)"') {
+            $threadId = $matches[1]
+        } elseif ($jsonText -match '"threadId"\s*:\s*"([^"]+)"') {
+            $threadId = $matches[1]
+        } elseif (-not [string]::IsNullOrEmpty($Session)) {
+            $threadId = $Session
+        }
+
+        # A started thread is not proof of success; turn.failed must propagate.
+        $stderrText = $stderrOutput.ToString()
+        $turnFailed = $jsonText -match '"type"\s*:\s*"turn.failed"'
+
+        if ($turnFailed -or $exitCode -ne 0) {
+            $resultExitCode = if ($exitCode -eq 0) { 1 } else { $exitCode }
+            Write-RunResult -Path $resultPath -Status 'failed' -ExitCode $resultExitCode `
+                -Runtime $script:SelectedRuntime -SessionId $threadId -FinalMessage '' `
+                -OutputPath $Output -EventsPath $eventsPath -StderrPath $stderrPath `
+                -Elapsed $elapsed -StartedAt $startedAt -ErrorMessage 'Codex command failed'
+            Write-Output "status=failed"
+            Write-Output "runtime=$script:SelectedRuntime"
+            if (-not [string]::IsNullOrEmpty($threadId)) { Write-Output "session_id=$threadId" }
+            Write-Output "result_path=$resultPath"
+            Write-Output "events_path=$eventsPath"
+            Write-Error "[ERROR] Codex command failed"
+            if (-not [string]::IsNullOrWhiteSpace($stderrText)) { Write-Error $stderrText }
+            exit 1
+        }
 
         $agentMessages = @()
         $detailItems = @()
@@ -434,6 +626,9 @@ try {
             # Find thread_id
             if ($jsonText -match '"thread_id"\s*:\s*"([^"]+)"') {
                 $threadId = $matches[1]
+            }
+            if ([string]::IsNullOrEmpty($threadId) -and -not [string]::IsNullOrEmpty($Session)) {
+                $threadId = $Session
             }
 
             # Parse JSON lines using PowerShell native parsing (more reliable on Windows)
@@ -537,6 +732,11 @@ try {
         Write-File-NoBOM -Path $Output -Content "(no response from codex)"
     }
 
+    Write-RunResult -Path $resultPath -Status 'completed' -ExitCode 0 `
+        -Runtime $script:SelectedRuntime -SessionId $threadId -FinalMessage $summaryText `
+        -OutputPath $Output -EventsPath $eventsPath -StderrPath $stderrPath `
+        -Elapsed $elapsed -StartedAt $startedAt -ErrorMessage ''
+
     # Desktop notification for long runs (opt-in via -Notify or CODEX_NOTIFY=1)
     if ($Notify -or $env:CODEX_NOTIFY -eq '1') {
         $bodyPreview = if (-not [string]::IsNullOrWhiteSpace($summaryText)) { $summaryText } else { 'task complete' }
@@ -549,9 +749,8 @@ try {
     if (-not [string]::IsNullOrEmpty($threadId)) {
         Write-Output "session_id=$threadId"
     }
+    Write-Output "runtime=$script:SelectedRuntime"
     Write-Output "output_path=$Output"
+    Write-Output "result_path=$resultPath"
+    Write-Output "events_path=$eventsPath"
     Write-Output "elapsed=${elapsed}s"
-
-} finally {
-    & $cleanupScript
-}

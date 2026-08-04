@@ -38,9 +38,15 @@ chmod +x "$test_tmp/bin/script" "$test_tmp/bin/codex"
 
 run_wrapper() {
   PATH="$test_tmp/bin:$PATH" \
+    CODEX_SKILL_STATE_HOME="$test_tmp/state" \
     "$repo_dir/scripts/ask_codex.sh" "test task" \
     --workspace "$test_tmp/workspace" \
     --output "$test_tmp/result.md"
+}
+
+extract_value() {
+  local output="$1" key="$2"
+  printf '%s\n' "$output" | sed -n "s/^${key}=//p" | tail -1
 }
 
 assert_contains() {
@@ -57,6 +63,15 @@ assert_contains() {
 success_output="$(MOCK_CODEX_MODE=success run_wrapper 2>&1)"
 assert_contains "$success_output" "session_id=thread-test"
 assert_contains "$(cat "$test_tmp/result.md")" "## Summary"
+success_result="$(extract_value "$success_output" result_path)"
+[[ -f "$success_result" ]] || {
+  printf 'Expected result file: %s\n' "$success_result" >&2
+  exit 1
+}
+[[ "$(jq -r '.status' "$success_result")" == "completed" ]]
+[[ "$(jq -r '.exit_code' "$success_result")" -eq 0 ]]
+[[ "$(jq -r '.session_id' "$success_result")" == "thread-test" ]]
+[[ -f "$(jq -r '.events_path' "$success_result")" ]]
 
 set +e
 failure_output="$(MOCK_CODEX_MODE=failure run_wrapper 2>&1)"
@@ -68,6 +83,10 @@ set -e
 }
 assert_contains "$failure_output" "Codex command failed (exit 42)"
 assert_contains "$failure_output" "network unavailable"
+failure_result="$(extract_value "$failure_output" result_path)"
+[[ "$(jq -r '.status' "$failure_result")" == "failed" ]]
+[[ "$(jq -r '.exit_code' "$failure_result")" -eq 42 ]]
+[[ "$(jq -r '.stderr_tail' "$failure_result")" == "network unavailable" ]]
 
 set +e
 partial_output="$(MOCK_CODEX_MODE=partial_failure run_wrapper 2>&1)"
@@ -79,5 +98,9 @@ set -e
 }
 assert_contains "$partial_output" "Codex command failed (exit 43)"
 assert_contains "$partial_output" "request interrupted"
+partial_result="$(extract_value "$partial_output" result_path)"
+[[ "$(jq -r '.status' "$partial_result")" == "failed" ]]
+[[ "$(jq -r '.exit_code' "$partial_result")" -eq 43 ]]
+[[ "$(jq -r '.session_id' "$partial_result")" == "partial-thread" ]]
 
 printf 'ask_codex.sh tests passed\n'
