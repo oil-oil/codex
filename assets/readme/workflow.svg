@@ -1,0 +1,59 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="430" viewBox="0 0 1200 430" role="img" aria-labelledby="title desc">
+  <title id="title">Codex 子 Agent 调用流程</title>
+  <desc id="desc">调用方 Agent 整理任务，通过包装脚本创建 Codex CLI 会话，读取独立运行产物，并使用会话 ID 继续任务。</desc>
+
+  <defs>
+    <marker id="arrow-green" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10Z" fill="#55C98E"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0 0L10 5L0 10Z" fill="#8DBFF4"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="430" rx="28" fill="#0B0E0C"/>
+  <text x="54" y="61" fill="#F2F5F3" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="38" font-weight="700">一次派发，保留一条可继续的 Codex 会话</text>
+  <text x="54" y="94" fill="#8E9A92" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">task → wrapper → codex session → artifacts → resume</text>
+
+  <path d="M264 220H334" stroke="#55C98E" stroke-width="3" marker-end="url(#arrow-green)"/>
+  <path d="M566 220H636" stroke="#55C98E" stroke-width="3" marker-end="url(#arrow-green)"/>
+  <path d="M868 220H938" stroke="#55C98E" stroke-width="3" marker-end="url(#arrow-green)"/>
+
+  <g transform="translate(52 144)">
+    <rect width="212" height="152" rx="20" fill="#121713" stroke="#334039"/>
+    <text x="24" y="38" fill="#6EE7A8" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">01 / CALLER</text>
+    <text x="24" y="79" fill="#F2F5F3" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="25" font-weight="650">调用方 Agent</text>
+    <text x="24" y="112" fill="#9AA69F" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="19">整理目标、约束</text>
+    <text x="24" y="137" fill="#9AA69F" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="19">与验证方式</text>
+  </g>
+
+  <g transform="translate(354 144)">
+    <rect width="212" height="152" rx="20" fill="#121713" stroke="#334039"/>
+    <text x="24" y="38" fill="#6EE7A8" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">02 / WRAPPER</text>
+    <text x="24" y="79" fill="#F2F5F3" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="25" font-weight="650">包装脚本</text>
+    <text x="24" y="112" fill="#9AA69F" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="19">选择运行环境</text>
+    <text x="24" y="137" fill="#9AA69F" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="19">捕获 JSONL 事件</text>
+  </g>
+
+  <g transform="translate(656 144)">
+    <rect width="212" height="152" rx="20" fill="#121713" stroke="#334039"/>
+    <text x="24" y="38" fill="#6EE7A8" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">03 / SESSION</text>
+    <text x="24" y="79" fill="#F2F5F3" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="25" font-weight="650">Codex CLI</text>
+    <text x="24" y="112" fill="#9AA69F" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="19">探索、实现、评审</text>
+    <text x="24" y="137" fill="#9AA69F" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="19">并返回会话 ID</text>
+  </g>
+
+  <g transform="translate(958 144)">
+    <rect width="190" height="152" rx="20" fill="#121713" stroke="#334039"/>
+    <text x="24" y="38" fill="#6EE7A8" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">04 / PROOF</text>
+    <text x="24" y="79" fill="#F2F5F3" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="25" font-weight="650">运行产物</text>
+    <text x="24" y="112" fill="#9AA69F" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">result.md</text>
+    <text x="24" y="137" fill="#9AA69F" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">result.json · events</text>
+  </g>
+
+  <path d="M1054 322V365H762V315" fill="none" stroke="#8DBFF4" stroke-width="3" stroke-dasharray="8 8" marker-end="url(#arrow-blue)"/>
+  <rect x="856" y="344" width="166" height="34" rx="17" fill="#15202A"/>
+  <text x="939" y="367" text-anchor="middle" fill="#BBD9F8" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">--session &lt;id&gt;</text>
+
+  <text x="54" y="385" fill="#7F8A83" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="18">调用方检查结果和工作区改动后，可以续接原会话处理新发现。</text>
+</svg>

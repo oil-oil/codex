@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400" role="img" aria-labelledby="title desc">
+  <title id="title">codex</title>
+  <desc id="desc">让其他 Agent 通过包装脚本把 Codex CLI 作为可持续对话的编码子 Agent。</desc>
+
+  <defs>
+    <linearGradient id="panel" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#111613"/>
+      <stop offset="1" stop-color="#0B0E0C"/>
+    </linearGradient>
+    <clipPath id="terminal-clip">
+      <rect x="710" y="46" width="430" height="308" rx="22"/>
+    </clipPath>
+  </defs>
+
+  <rect width="1200" height="400" rx="28" fill="#090B0A"/>
+  <path d="M675 0V400" stroke="#202722"/>
+
+  <g transform="translate(58 52)">
+    <g>
+      <rect width="274" height="32" rx="16" fill="#18221D"/>
+      <circle cx="18" cy="16" r="5" fill="#6EE7A8"/>
+      <text x="34" y="22" fill="#A8B5AD" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16" font-weight="600" letter-spacing="1.4">AGENT DELEGATION SKILL</text>
+    </g>
+
+    <text x="0" y="124" fill="#F2F5F3" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="78" font-weight="750" letter-spacing="-3">codex</text>
+    <text x="0" y="172" fill="#F2F5F3" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="28" font-weight="650">让其他 Agent 调用 Codex CLI</text>
+    <text x="0" y="210" fill="#96A29B" font-family="-apple-system, BlinkMacSystemFont, Segoe UI, PingFang SC, sans-serif" font-size="24">作为可持续对话的编码子 Agent</text>
+
+    <g transform="translate(0 222)">
+      <circle cx="8" cy="8" r="8" fill="#6EE7A8"/>
+      <path d="M8 16V42" stroke="#355443" stroke-width="2"/>
+      <circle cx="8" cy="50" r="8" fill="#9CCBFF"/>
+      <path d="M8 58V84" stroke="#355443" stroke-width="2"/>
+      <circle cx="8" cy="92" r="8" fill="#F2F5F3"/>
+      <text x="30" y="15" fill="#D9DFDB" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">派发任务</text>
+      <text x="30" y="57" fill="#D9DFDB" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">保留会话</text>
+      <text x="30" y="99" fill="#D9DFDB" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">检查结果并继续</text>
+    </g>
+  </g>
+
+  <g clip-path="url(#terminal-clip)">
+    <rect x="710" y="46" width="430" height="308" rx="22" fill="url(#panel)" stroke="#344139"/>
+    <rect x="710" y="46" width="430" height="50" fill="#151B17"/>
+    <circle cx="740" cy="71" r="6" fill="#647068"/>
+    <circle cx="760" cy="71" r="6" fill="#647068"/>
+    <circle cx="780" cy="71" r="6" fill="#6EE7A8"/>
+    <text x="812" y="78" fill="#87928B" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="17">ask_codex.sh</text>
+
+    <text x="742" y="132" fill="#6EE7A8" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19">$</text>
+    <text x="770" y="132" fill="#E7ECE8" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="19">delegate "修复登录问题"</text>
+
+    <path d="M748 162V305" stroke="#2E4B3B" stroke-width="2"/>
+    <circle cx="748" cy="177" r="7" fill="#6EE7A8"/>
+    <circle cx="748" cy="218" r="7" fill="#9CCBFF"/>
+    <circle cx="748" cy="259" r="7" fill="#9CCBFF"/>
+    <circle cx="748" cy="300" r="7" fill="#F2F5F3"/>
+
+    <text x="772" y="184" fill="#AEB8B2" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">session_id=019f…</text>
+    <text x="772" y="225" fill="#AEB8B2" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">runtime=default</text>
+    <text x="772" y="266" fill="#AEB8B2" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">result_path=…/result.json</text>
+    <text x="772" y="307" fill="#F2F5F3" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="18">status=completed</text>
+  </g>
+
+  <text x="1128" y="374" text-anchor="end" fill="#68736C" font-family="ui-monospace, SFMono-Regular, Menlo, monospace" font-size="16">macOS · Linux · Windows</text>
+</svg>
