@@ -5,6 +5,8 @@ description: 将编码、代码库探索、实现、评审和验证任务委托�
 
 # Codex CLI Agent
 
+命令中的 `SKILL_DIR` 为当前已安装 codex Skill 的绝对目录，不是固定宿主路径。
+
 ## 核心规则
 
 - 通过内置包装脚本调用 Codex，不要直接执行 `codex exec`。包装脚本负责捕获 JSONL、显示有效进度、记录会话 ID，并生成精简的 Markdown 结果。
@@ -34,13 +36,13 @@ description: 将编码、代码库探索、实现、评审和验证任务委托�
 macOS 与 Linux：
 
 ```text
-~/.agents/skills/codex/scripts/ask_codex.sh
+"$SKILL_DIR"/scripts/ask_codex.sh
 ```
 
 Windows：
 
 ```text
-~/.agents/skills/codex/scripts/ask_codex.ps1
+"$SKILL_DIR"/scripts/ask_codex.ps1
 ```
 
 `~/.claude/skills/codex` 可以作为兼容软链接指向同一个 Skill。
@@ -50,13 +52,13 @@ Windows：
 新任务：
 
 ```bash
-~/.agents/skills/codex/scripts/ask_codex.sh "实现请求的改动"
+"$SKILL_DIR"/scripts/ask_codex.sh "实现请求的改动"
 ```
 
 指定工作区和入口文件：
 
 ```bash
-~/.agents/skills/codex/scripts/ask_codex.sh "重构这些组件并完成验证" \
+"$SKILL_DIR"/scripts/ask_codex.sh "重构这些组件并完成验证" \
   --workspace "/path/to/repo" \
   --file "src/components/UserList.tsx" \
   --file "src/components/UserDetail.tsx"
@@ -65,7 +67,7 @@ Windows：
 只读探索或评审：
 
 ```bash
-~/.agents/skills/codex/scripts/ask_codex.sh "追踪当前请求路径并引用文件和行号" \
+"$SKILL_DIR"/scripts/ask_codex.sh "追踪当前请求路径并引用文件和行号" \
   --workspace "/path/to/repo" \
   --read-only
 ```
@@ -73,14 +75,14 @@ Windows：
 继续已有会话：
 
 ```bash
-~/.agents/skills/codex/scripts/ask_codex.sh "继续修复刚才发现的问题" \
+"$SKILL_DIR"/scripts/ask_codex.sh "继续修复刚才发现的问题" \
   --session <session_id>
 ```
 
 使用默认 Codex 时，附加图片并要求结构化结果：
 
 ```bash
-~/.agents/skills/codex/scripts/ask_codex.sh "比较截图与当前实现" \
+"$SKILL_DIR"/scripts/ask_codex.sh "比较截图与当前实现" \
   --image "/path/to/screenshot.png" \
   --output-schema "/path/to/result.schema.json" \
   --read-only
@@ -143,7 +145,7 @@ Markdown 结果包含：
 3. 只有原生透明效果不可靠时，才使用灰底抠图工具：
 
 ```bash
-python3 ~/.agents/skills/codex/scripts/cutout.py input.png output.png
+python3 "$SKILL_DIR"/scripts/cutout.py input.png output.png
 ```
 
 使用该后备方案时，让图像生成在纯 `#808080` 背景上，执行抠图后确认输出为 RGBA，并检查边缘质量。

@@ -153,3 +153,15 @@ bash tests/test_ask_codex.sh
 ```
 
 测试覆盖成功运行、完整失败和已经返回会话 ID 的中途失败。
+
+## 配置、依赖与使用边界
+
+需要 Codex CLI 与官方登录；macOS/Linux 使用 Bash，Windows 使用 PowerShell。包装脚本可从任意实际 Skill 目录调用。
+
+仅在用户明确要求委托时使用。任务文件与指令会交给 CLI 配置的模型；继续原会话时核对会话与目录，避免混入无关任务。
+
+使用示例：
+
+```text
+用 Codex 处理这个明确的代码修改。
+```
