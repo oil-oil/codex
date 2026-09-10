@@ -2,7 +2,7 @@
   <img src="./assets/readme/hero.svg" width="100%" alt="codex：让其他 Agent 把 Codex CLI 作为可持续对话的编码子 Agent">
 </p>
 
-`codex` 是一个供其他 Agent 调用的 Skill。它通过包装脚本把代码探索、实现、评审和验证任务交给 Codex CLI，同时保留会话 ID、结构化状态和完整事件记录。
+把代码探索、实现、修复、评审和测试交给持久化编码 Agent，支持继续同一任务。
 
 调用方负责说明目标、约束和验收方式；Codex 负责在指定工作区内完成任务。一次任务结束后，调用方可以检查结果，也可以继续同一个会话处理后续问题。
 
@@ -153,3 +153,15 @@ bash tests/test_ask_codex.sh
 ```
 
 测试覆盖成功运行、完整失败和已经返回会话 ID 的中途失败。
+
+## 配置、依赖与使用边界
+
+需要 Codex CLI 与官方登录；macOS/Linux 使用 Bash，Windows 使用 PowerShell。包装脚本可从任意实际 Skill 目录调用。
+
+仅在用户明确要求委托时使用。任务文件与指令会交给 CLI 配置的模型；继续原会话时核对会话与目录，避免混入无关任务。
+
+使用示例：
+
+```text
+用 Codex 处理这个明确的代码修改。
+```
