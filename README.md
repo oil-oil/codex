@@ -2,7 +2,7 @@
   <img src="./assets/readme/hero.svg" width="100%" alt="codex：让其他 Agent 把 Codex CLI 作为可持续对话的编码子 Agent">
 </p>
 
-`codex` 是一个供其他 Agent 调用的 Skill。它通过包装脚本把代码探索、实现、评审和验证任务交给 Codex CLI，同时保留会话 ID、结构化状态和完整事件记录。
+把代码探索、实现、修复、评审和测试交给持久化编码 Agent，支持继续同一任务。
 
 调用方负责说明目标、约束和验收方式；Codex 负责在指定工作区内完成任务。一次任务结束后，调用方可以检查结果，也可以继续同一个会话处理后续问题。
 
