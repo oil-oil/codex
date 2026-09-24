@@ -10,10 +10,7 @@ description: 将编码、代码库探索、实现、评审和验证任务委托�
 ## 核心规则
 
 - 通过内置包装脚本调用 Codex，不要直接执行 `codex exec`。包装脚本负责捕获 JSONL、显示有效进度、记录会话 ID，并生成精简的 Markdown 结果。
-- 常规调用不选择或传递模型、思考强度与模型提供商。包装脚本会自动选择本机已配置的运行环境：
-  - 存在有效的 `~/.codex-deepseek/config.toml` 时使用 DeepSeek Codex。
-  - 未配置 DeepSeek 时使用默认 Codex。
-- DeepSeek V4 Flash 是纯文本模型。启用 DeepSeek 时不要传 `--image`；由当前 Agent 先识别图片，再把视觉结论作为文字背景交给 Codex。
+- 常规调用不选择或传递模型、思考强度与模型提供商，由本机默认 Codex 配置决定。
 - 每个任务先调用一次包装脚本。成功后读取 `output_path`，检查工作区结果，再判断是否需要继续同一会话。
 - 委托提示词应包含目标、完成标准、约束和必要背景，不要规定每一个实现步骤，也不要粘贴大段文件内容。
 - 使用 `--file` 提供 1–4 个重要入口文件，其余路径让 Codex 自己探索。
@@ -109,7 +106,7 @@ Windows：
 - `max`：仅用于跨模块架构、疑难故障、复杂安全评审，或 `high` 已尝试但结论仍明显不足的任务。
 - `low`：仅当用户明确优先考虑速度或成本，并且任务是简单、机械、低风险操作时使用。
 
-DeepSeek V4 Flash 只支持 `low`、`high` 和 `max`。DeepSeek 运行环境启用时，不要传递 `medium`、`xhigh`、`minimal` 或 `ultra`。不要仅因为任务描述较长就自动使用 `max`；先收窄目标和上下文。
+不要仅因为任务描述较长就自动使用 `max`；先收窄目标和上下文。
 
 ## 输出
 
@@ -117,7 +114,7 @@ DeepSeek V4 Flash 只支持 `low`、`high` 和 `max`。DeepSeek 运行环境启�
 
 ```text
 session_id=<thread_id>
-runtime=<default|deepseek>
+runtime=default
 output_path=<path>
 result_path=<path>
 events_path=<path>
@@ -136,7 +133,7 @@ Markdown 结果包含：
 
 ## 图片
 
-`--image` 只用于默认 Codex 运行环境。DeepSeek V4 Flash 当前没有视觉识别能力；若已经配置 DeepSeek，应由调用 Skill 的 Agent 自己查看图片，并把页面结构、文字、颜色、尺寸和异常点等必要视觉信息写进委托提示词。包装脚本会拒绝把图片发送给 DeepSeek，避免静默得到错误结果。
+`--image` 通过默认 Codex 运行环境发送给 Codex。
 
 需要透明背景图片时：
 
@@ -167,7 +164,7 @@ python3 "$SKILL_DIR"/scripts/cutout.py input.png output.png
 
 ## 会话约束
 
-续接会话会保留原工作区上下文和权限，因此不要把 `--read-only` 或 `--sandbox` 与 `--session` 同时使用。DeepSeek 配置启用后，会话文件位于独立的 `~/.codex-deepseek`；继续会话时应保持该运行环境可用。
+续接会话会保留原工作区上下文和权限，因此不要把 `--read-only` 或 `--sandbox` 与 `--session` 同时使用。续接会话使用本机默认 Codex 配置。
 
 ## 失败处理
 

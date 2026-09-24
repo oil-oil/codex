@@ -14,7 +14,7 @@ Task input:
 
 File context (optional, repeatable):
   -f, --file <path>            Priority file path
-  -i, --image <path>           Image to attach to the default Codex runtime
+  -i, --image <path>           Image to attach to Codex
 
 Multi-turn:
       --session <id>           Resume a previous session (thread_id from prior run)
@@ -33,7 +33,7 @@ Options:
 
 Output (on success):
   session_id=<thread_id>       Use with --session for follow-up calls
-  runtime=<default|deepseek>   Automatically selected Codex runtime
+  runtime=default              Uses the local default Codex configuration
   output_path=<file>           Path to response markdown
   result_path=<file>           Structured run status and metadata
   events_path=<file>           Raw Codex JSONL events for diagnostics
@@ -48,7 +48,7 @@ Examples:
   # Continue conversation
   ask_codex.sh "Also add retry logic" --session <id>
 
-  # Read-only structured analysis with an attached image (default runtime only)
+  # Read-only structured analysis with an attached image
   ask_codex.sh "Compare the screenshot with the implementation" --read-only \
     --image screenshot.png --output-schema result.schema.json
 USAGE
@@ -57,40 +57,6 @@ USAGE
 require_cmd() {
   if ! command -v "$1" >/dev/null 2>&1; then
     echo "[ERROR] Missing required command: $1" >&2
-    exit 1
-  fi
-}
-
-configure_runtime() {
-  local deepseek_home="${CODEX_DEEPSEEK_HOME:-$HOME/.codex-deepseek}"
-  selected_runtime="default"
-
-  if [[ ! -f "$deepseek_home/config.toml" ]]; then
-    if [[ -n "${CODEX_DEEPSEEK_HOME:-}" ]]; then
-      echo "[ERROR] CODEX_DEEPSEEK_HOME is set but config.toml is missing: $deepseek_home/config.toml" >&2
-      exit 1
-    fi
-    return 0
-  fi
-
-  if [[ ! -f "$deepseek_home/models.json" ]]; then
-    echo "[ERROR] DeepSeek Codex is configured but models.json is missing: $deepseek_home/models.json" >&2
-    exit 1
-  fi
-
-  export CODEX_HOME="$deepseek_home"
-  selected_runtime="deepseek"
-
-  if [[ -z "${DEEPSEEK_API_KEY:-}" ]] && [[ "$(uname -s)" == "Darwin" ]] && command -v security >/dev/null 2>&1; then
-    local deepseek_api_key
-    deepseek_api_key="$(security find-generic-password -a "$USER" -s codex-deepseek-api-key -w 2>/dev/null || true)"
-    if [[ -n "$deepseek_api_key" ]]; then
-      export DEEPSEEK_API_KEY="$deepseek_api_key"
-    fi
-  fi
-
-  if [[ -z "${DEEPSEEK_API_KEY:-}" ]]; then
-    echo "[ERROR] DeepSeek Codex is configured but DEEPSEEK_API_KEY is unavailable." >&2
     exit 1
   fi
 }
@@ -171,7 +137,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-configure_runtime
+selected_runtime="default"
 require_cmd codex
 require_cmd jq
 
@@ -219,12 +185,6 @@ if [[ -n "$reasoning_effort" ]]; then
     minimal|low|medium|high|xhigh|max|ultra) ;;
     *) echo "[ERROR] Unsupported reasoning effort: $reasoning_effort" >&2; exit 1 ;;
   esac
-  if [[ "$selected_runtime" == "deepseek" ]]; then
-    case "$reasoning_effort" in
-      low|high|max) ;;
-      *) echo "[ERROR] DeepSeek supports only low, high, and max reasoning. Omit --reasoning to use high." >&2; exit 1 ;;
-    esac
-  fi
 fi
 
 if [[ -n "$session_id" && ( "$read_only" == true || -n "$sandbox_mode" ) ]]; then
@@ -239,10 +199,6 @@ fi
 
 resolved_images=()
 if (( ${#image_refs[@]} > 0 )); then
-  if [[ "$selected_runtime" == "deepseek" ]]; then
-    echo "[ERROR] DeepSeek V4 Flash is text-only and cannot receive --image. Inspect the image in the calling Agent, then pass the visual findings as text." >&2
-    exit 1
-  fi
   for image_ref in "${image_refs[@]}"; do
     resolved_image="$(resolve_file_ref "$workspace" "$image_ref")"
     [[ -f "$resolved_image" ]] || { echo "[ERROR] Image not found: $resolved_image" >&2; exit 1; }

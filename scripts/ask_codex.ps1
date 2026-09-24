@@ -58,7 +58,7 @@ Task input:
 
 File context (optional, repeatable):
   -File, -f <path>             Priority file path
-  -Image, -i <path>            Image to attach to the default Codex runtime
+  -Image, -i <path>            Image to attach to Codex
 
 Multi-turn:
   -Session <id>                Resume a previous session (thread_id from prior run)
@@ -79,7 +79,7 @@ Options:
 
 Output (on success):
   session_id=<thread_id>       Use with -Session for follow-up calls
-  runtime=<default|deepseek>   Automatically selected Codex runtime
+  runtime=default              Uses the local default Codex configuration
   output_path=<file>           Path to response markdown
   result_path=<file>           Structured run status and metadata
   events_path=<file>           Raw Codex JSONL events for diagnostics
@@ -94,7 +94,7 @@ Examples:
   # Continue conversation
   ask_codex.ps1 "Also add retry logic" -Session <id>
 
-  # Read-only structured analysis with an attached image (default runtime only)
+  # Read-only structured analysis with an attached image
   ask_codex.ps1 "Compare screenshot and implementation" -ReadOnly `
     -Image screenshot.png -OutputSchema result.schema.json
 '@
@@ -112,45 +112,6 @@ function Trim-Whitespace {
     param([string]$Text)
     if ([string]::IsNullOrEmpty($Text)) { return '' }
     return $Text.Trim()
-}
-
-function Initialize-CodexRuntime {
-    $script:SelectedRuntime = 'default'
-    $userHome = [Environment]::GetFolderPath('UserProfile')
-    $deepSeekHome = if ($env:CODEX_DEEPSEEK_HOME) {
-        $env:CODEX_DEEPSEEK_HOME
-    } else {
-        Join-Path $userHome '.codex-deepseek'
-    }
-    $configPath = Join-Path $deepSeekHome 'config.toml'
-
-    if (-not (Test-Path $configPath -PathType Leaf)) {
-        if ($env:CODEX_DEEPSEEK_HOME) {
-            Write-Error "[ERROR] CODEX_DEEPSEEK_HOME is set but config.toml is missing: $configPath"
-            exit 1
-        }
-        return
-    }
-
-    $modelsPath = Join-Path $deepSeekHome 'models.json'
-    if (-not (Test-Path $modelsPath -PathType Leaf)) {
-        Write-Error "[ERROR] DeepSeek Codex is configured but models.json is missing: $modelsPath"
-        exit 1
-    }
-
-    $env:CODEX_HOME = $deepSeekHome
-    $script:SelectedRuntime = 'deepseek'
-
-    if (-not $env:DEEPSEEK_API_KEY -and (Get-Command security -ErrorAction SilentlyContinue)) {
-        $account = [Environment]::UserName
-        $key = (& security find-generic-password -a $account -s codex-deepseek-api-key -w 2>$null)
-        if ($key) { $env:DEEPSEEK_API_KEY = $key.Trim() }
-    }
-
-    if (-not $env:DEEPSEEK_API_KEY) {
-        Write-Error '[ERROR] DeepSeek Codex is configured but DEEPSEEK_API_KEY is unavailable.'
-        exit 1
-    }
 }
 
 function Resolve-FileRef {
@@ -260,7 +221,7 @@ if ($Help) {
 # Check required commands
 Test-Command 'codex'
 Test-Command 'jq'
-Initialize-CodexRuntime
+$script:SelectedRuntime = 'default'
 
 # Resolve task text from either positional or named parameter
 if ([string]::IsNullOrEmpty($Task) -and -not [string]::IsNullOrEmpty($TaskText)) {
@@ -282,11 +243,6 @@ if ([string]::IsNullOrEmpty($Task)) {
     exit 1
 }
 
-if ($script:SelectedRuntime -eq 'deepseek' -and $Reasoning -notin @('low', 'high', 'max')) {
-    Write-Error '[ERROR] DeepSeek supports only low, high, and max reasoning. Omit -Reasoning to use high.'
-    exit 1
-}
-
 if (-not [string]::IsNullOrEmpty($Session) -and ($ReadOnly -or $FullAuto -or -not [string]::IsNullOrEmpty($Sandbox))) {
     Write-Error "[ERROR] Codex resume cannot override sandbox mode; it keeps the original session permissions."
     exit 1
@@ -304,10 +260,6 @@ if (-not [string]::IsNullOrEmpty($OutputSchema)) {
 }
 
 $resolvedImages = @()
-if ($script:SelectedRuntime -eq 'deepseek' -and @($Image).Count -gt 0) {
-    Write-Error '[ERROR] DeepSeek V4 Flash is text-only and cannot receive -Image. Inspect the image in the calling Agent, then pass the visual findings as text.'
-    exit 1
-}
 foreach ($imagePath in @($Image)) {
     if ([string]::IsNullOrWhiteSpace($imagePath)) { continue }
     $resolvedImage = $imagePath

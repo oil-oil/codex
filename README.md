@@ -77,7 +77,7 @@ Windows：
 
 ```text
 session_id=<thread_id>
-runtime=<default|deepseek>
+runtime=default
 output_path=<path>
 result_path=<path>
 events_path=<path>
@@ -106,14 +106,7 @@ elapsed=<seconds>s
 
 ## 运行环境
 
-包装脚本会自动选择本机已经配置的 Codex 运行环境：
-
-- 存在有效的 `~/.codex-deepseek/config.toml` 时，使用 DeepSeek Codex。
-- 未配置 DeepSeek 时，使用默认 Codex。
-
-常规调用不需要指定模型、Provider 或思考强度。默认思考强度为 `high`；只有任务确实需要时，才使用 `--reasoning low` 或 `--reasoning max` 覆盖。
-
-DeepSeek V4 Flash 只接受文本。启用 DeepSeek 运行环境后，包装脚本会拒绝 `--image`。调用方应先识别图片，再把页面结构、文字、颜色、尺寸和异常点整理成文字背景。
+包装脚本始终使用 Codex CLI 当前生效的默认配置，不会根据其他目录中的配置自动切换运行环境。模型和 Provider 由 Codex CLI 配置决定。常规调用不需要指定模型、Provider 或思考强度；默认思考强度为 `high`，只有任务确实需要时才使用 `--reasoning low` 或 `--reasoning max` 覆盖。
 
 ## 常用参数
 
@@ -125,7 +118,7 @@ DeepSeek V4 Flash 只接受文本。启用 DeepSeek 运行环境后，包装脚�
 | `--session <id>` | 继续已有会话 |
 | `--ephemeral` | 不持久化新会话 |
 | `--output-schema <path>` | 使用 JSON Schema 约束最终结果 |
-| `--image <path>` | 向默认 Codex 运行环境附加图片 |
+| `--image <path>` | 向 Codex 附加图片 |
 | `--reasoning <level>` | 在必要时覆盖默认思考强度 |
 | `--notify` | 长任务结束后发送桌面通知 |
 | `--output <path>` | 指定 Markdown 结果路径 |
