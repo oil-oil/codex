@@ -16,6 +16,7 @@ FAKE_SCRIPT
 
 cat > "$test_tmp/bin/codex" <<'FAKE_CODEX'
 #!/usr/bin/env bash
+printf '%s\n' "$@" > "$MOCK_CODEX_ARGS"
 case "${MOCK_CODEX_MODE:-success}" in
   success)
     printf '%s\n' '{"type":"thread.started","thread_id":"thread-test"}'
@@ -39,9 +40,26 @@ chmod +x "$test_tmp/bin/script" "$test_tmp/bin/codex"
 run_wrapper() {
   PATH="$test_tmp/bin:$PATH" \
     CODEX_SKILL_STATE_HOME="$test_tmp/state" \
+    MOCK_CODEX_ARGS="$test_tmp/codex.args" \
     "$repo_dir/scripts/ask_codex.sh" "test task" \
     --workspace "$test_tmp/workspace" \
-    --output "$test_tmp/result.md"
+    --output "$test_tmp/result.md" "$@"
+}
+
+assert_arg() {
+  grep -Fqx -- "$1" "$test_tmp/codex.args" || {
+    printf 'Expected Codex argument: %s\nActual arguments:\n' "$1" >&2
+    cat "$test_tmp/codex.args" >&2
+    exit 1
+  }
+}
+
+assert_no_arg() {
+  if grep -Fqx -- "$1" "$test_tmp/codex.args"; then
+    printf 'Unexpected Codex argument: %s\nActual arguments:\n' "$1" >&2
+    cat "$test_tmp/codex.args" >&2
+    exit 1
+  fi
 }
 
 extract_value() {
@@ -61,6 +79,8 @@ assert_contains() {
 }
 
 success_output="$(MOCK_CODEX_MODE=success run_wrapper 2>&1)"
+assert_arg '--dangerously-bypass-approvals-and-sandbox'
+assert_no_arg '--sandbox'
 assert_contains "$success_output" "session_id=thread-test"
 assert_contains "$(cat "$test_tmp/result.md")" "## Summary"
 success_result="$(extract_value "$success_output" result_path)"
@@ -72,6 +92,39 @@ success_result="$(extract_value "$success_output" result_path)"
 [[ "$(jq -r '.exit_code' "$success_result")" -eq 0 ]]
 [[ "$(jq -r '.session_id' "$success_result")" == "thread-test" ]]
 [[ -f "$(jq -r '.events_path' "$success_result")" ]]
+
+MOCK_CODEX_MODE=success run_wrapper --session thread-test >/dev/null
+assert_arg 'resume'
+assert_arg '--dangerously-bypass-approvals-and-sandbox'
+assert_no_arg '--sandbox'
+
+MOCK_CODEX_MODE=success run_wrapper --read-only >/dev/null
+assert_arg '--sandbox'
+assert_arg 'read-only'
+assert_no_arg '--dangerously-bypass-approvals-and-sandbox'
+
+MOCK_CODEX_MODE=success run_wrapper --sandbox workspace-write >/dev/null
+assert_arg '--sandbox'
+assert_arg 'workspace-write'
+assert_no_arg '--dangerously-bypass-approvals-and-sandbox'
+
+MOCK_CODEX_MODE=success run_wrapper --full-auto >/dev/null
+assert_arg '--dangerously-bypass-approvals-and-sandbox'
+assert_no_arg '--sandbox'
+
+set +e
+restricted_resume_output="$(MOCK_CODEX_MODE=success run_wrapper --session thread-test --read-only 2>&1)"
+restricted_resume_exit=$?
+set -e
+[[ "$restricted_resume_exit" -ne 0 ]]
+assert_contains "$restricted_resume_output" "Start a new session for a restricted run"
+
+set +e
+empty_sandbox_output="$(MOCK_CODEX_MODE=success run_wrapper --sandbox '' 2>&1)"
+empty_sandbox_exit=$?
+set -e
+[[ "$empty_sandbox_exit" -ne 0 ]]
+assert_contains "$empty_sandbox_output" "--sandbox requires a mode"
 
 set +e
 failure_output="$(MOCK_CODEX_MODE=failure run_wrapper 2>&1)"

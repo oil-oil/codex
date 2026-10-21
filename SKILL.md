@@ -61,12 +61,11 @@ Windows：
   --file "src/components/UserDetail.tsx"
 ```
 
-只读探索或评审：
+探索或评审：
 
 ```bash
 "$SKILL_DIR"/scripts/ask_codex.sh "追踪当前请求路径并引用文件和行号" \
-  --workspace "/path/to/repo" \
-  --read-only
+  --workspace "/path/to/repo"
 ```
 
 继续已有会话：
@@ -81,14 +80,13 @@ Windows：
 ```bash
 "$SKILL_DIR"/scripts/ask_codex.sh "比较截图与当前实现" \
   --image "/path/to/screenshot.png" \
-  --output-schema "/path/to/result.schema.json" \
-  --read-only
+  --output-schema "/path/to/result.schema.json"
 ```
 
 ## 工作流程
 
 1. 读取足够的本地上下文，明确目标和重要限制。
-2. 根据任务选择只读或工作区写入权限。
+2. 默认使用最高权限运行 Codex；只有用户明确要求限制权限时，才为新会话指定只读或其他沙箱模式。
 3. 使用包装脚本派发一段聚焦的提示词，通常控制在 500 字以内。
 4. 读取脚本返回的 `output_path`。
 5. 先检查测试是否被删除、跳过或弱化，再检查工作区改动是否越界。
@@ -96,7 +94,7 @@ Windows：
 7. 检查硬编码成功结果、吞掉异常、未经确认的 API、死代码和无调用方的抽象。
 8. 需要返工时继续原会话，只发送新发现和修正要求，不重复整个任务。
 
-分析、讨论、探索和评审任务使用 `--read-only`。实现任务默认使用 `workspace-write`。一次性测试可以使用 `--ephemeral`。
+新会话和续接会话默认传入 `--dangerously-bypass-approvals-and-sandbox`，使 Codex 不受自身沙箱和审批限制。不要因任务是分析、探索或评审就自动加 `--read-only`；只读是用户明确要求时的权限选项。一次性测试可以使用 `--ephemeral`。调用方仍须检查 Codex 的改动与验证结果。
 
 ## 思考强度
 
@@ -154,9 +152,9 @@ python3 "$SKILL_DIR"/scripts/cutout.py input.png output.png
 - `--image <path>`：附加图片，可重复使用。
 - `--session <id>`：继续已有会话。
 - `--reasoning <low|high|max>`：特殊情况下覆盖默认思考强度，常规调用不要传递。
-- `--sandbox <mode>`：覆盖新会话的沙箱模式。
-- `--read-only`：只读新会话。
-- `--full-auto`：使用默认的工作区写入模式。
+- `--sandbox <mode>`：为新会话显式指定沙箱模式。
+- `--read-only`：创建只读新会话。
+- `--full-auto`：默认最高权限的兼容别名。
 - `--ephemeral`：不持久化会话。
 - `--output-schema <path>`：约束最终输出结构。
 - `--notify`：长任务结束后发送通知。
@@ -164,7 +162,7 @@ python3 "$SKILL_DIR"/scripts/cutout.py input.png output.png
 
 ## 会话约束
 
-续接会话会保留原工作区上下文和权限，因此不要把 `--read-only` 或 `--sandbox` 与 `--session` 同时使用。续接会话使用本机默认 Codex 配置。
+续接会话保留原工作区上下文，但包装脚本会再次显式传入最高权限参数。`--read-only` 和 `--sandbox` 不能与 `--session` 同时使用；需要受限权限时开启新会话。续接会话使用本机默认 Codex 配置。
 
 ## 失败处理
 

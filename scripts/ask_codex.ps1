@@ -68,9 +68,9 @@ Options:
   -Model <name>                Model override
   -Reasoning <level>           minimal, low, medium, high, xhigh, max (default: high)
   -Fast                        Use the Fast service tier (higher usage/cost)
-  -Sandbox <mode>              Sandbox mode override
+  -Sandbox <mode>              Explicit sandbox mode override
   -ReadOnly                    Read-only sandbox (no file changes)
-  -FullAuto                    Compatibility alias for workspace-write (default)
+  -FullAuto                    Compatibility alias for full access (default)
   -Ephemeral                   Do not persist the Codex session
   -OutputSchema <path>         Require the final response to match a JSON Schema
   -Notify                      Desktop notification when a long run finishes (opt-in)
@@ -94,8 +94,8 @@ Examples:
   # Continue conversation
   ask_codex.ps1 "Also add retry logic" -Session <id>
 
-  # Read-only structured analysis with an attached image
-  ask_codex.ps1 "Compare screenshot and implementation" -ReadOnly `
+  # Structured analysis with an attached image
+  ask_codex.ps1 "Compare screenshot and implementation" `
     -Image screenshot.png -OutputSchema result.schema.json
 '@
 }
@@ -243,8 +243,13 @@ if ([string]::IsNullOrEmpty($Task)) {
     exit 1
 }
 
-if (-not [string]::IsNullOrEmpty($Session) -and ($ReadOnly -or $FullAuto -or -not [string]::IsNullOrEmpty($Sandbox))) {
-    Write-Error "[ERROR] Codex resume cannot override sandbox mode; it keeps the original session permissions."
+if ($PSBoundParameters.ContainsKey('Sandbox') -and [string]::IsNullOrWhiteSpace($Sandbox)) {
+    Write-Error '[ERROR] -Sandbox requires a mode.'
+    exit 1
+}
+
+if (-not [string]::IsNullOrEmpty($Session) -and ($ReadOnly -or -not [string]::IsNullOrEmpty($Sandbox))) {
+    Write-Error "[ERROR] Codex resume does not support -ReadOnly or -Sandbox here. Start a new session for a restricted run."
     exit 1
 }
 
@@ -321,7 +326,7 @@ if ($Fast) {
 
 if (-not [string]::IsNullOrEmpty($Session)) {
     # Current Codex resume supports JSON, model/image/schema overrides, and non-git workspaces.
-    $codexArgs = @('exec', 'resume') + $commonArgs
+    $codexArgs = @('exec', 'resume') + $commonArgs + @('--dangerously-bypass-approvals-and-sandbox')
     if (-not [string]::IsNullOrEmpty($Model)) { $codexArgs += '-m', $Model }
     if ($Ephemeral) { $codexArgs += '--ephemeral' }
     if (-not [string]::IsNullOrEmpty($OutputSchema)) { $codexArgs += '--output-schema', $OutputSchema }
@@ -335,7 +340,7 @@ if (-not [string]::IsNullOrEmpty($Session)) {
     } elseif (-not [string]::IsNullOrEmpty($Sandbox)) {
         $codexArgs += '--sandbox', $Sandbox
     } else {
-        $codexArgs += '--sandbox', 'workspace-write'
+        $codexArgs += '--dangerously-bypass-approvals-and-sandbox'
     }
     if (-not [string]::IsNullOrEmpty($Model)) { $codexArgs += '-m', $Model }
     if ($Ephemeral) { $codexArgs += '--ephemeral' }

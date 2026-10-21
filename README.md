@@ -10,7 +10,7 @@
 
 - 探索代码库，追踪入口、依赖和调用链。
 - 实现边界清楚的功能或修复。
-- 只读评审代码，并引用具体文件和行号。
+- 评审代码，并引用具体文件和行号。
 - 运行测试、类型检查或构建，整理验证结果。
 - 继续已有 Codex 会话，不重复传递完整背景。
 
@@ -58,7 +58,7 @@ Windows：
   -File "src\auth.ts"
 ```
 
-脚本默认创建可写的新会话。探索、讨论和评审任务应使用只读模式：
+脚本默认以最高权限创建和续接会话，并跳过 Codex 自身的沙箱和审批。只有明确需要限制权限时，才为新会话指定只读模式：
 
 ```bash
 ~/.agents/skills/codex/scripts/ask_codex.sh \
@@ -102,7 +102,7 @@ elapsed=<seconds>s
   --session <session_id>
 ```
 
-续接会话会保留原工作区和沙箱权限，因此不能同时传入 `--read-only` 或新的 `--sandbox`。
+续接会话保留原工作区，包装脚本会再次传入最高权限参数。续接时不能指定 `--read-only` 或新的 `--sandbox`；需要受限权限时开启新会话。
 
 ## 运行环境
 
@@ -115,6 +115,8 @@ elapsed=<seconds>s
 | `--workspace <path>` | 指定 Codex 工作目录 |
 | `--file <path>` | 提供优先阅读的入口文件，可以重复使用 |
 | `--read-only` | 创建只读会话 |
+| `--sandbox <mode>` | 为新会话指定沙箱模式 |
+| `--full-auto` | 默认最高权限的兼容别名 |
 | `--session <id>` | 继续已有会话 |
 | `--ephemeral` | 不持久化新会话 |
 | `--output-schema <path>` | 使用 JSON Schema 约束最终结果 |

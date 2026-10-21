@@ -22,9 +22,9 @@ Multi-turn:
 Options:
   -w, --workspace <path>       Workspace directory (default: current directory)
       --reasoning <level>      Optional reasoning override; normally use configured high
-      --sandbox <mode>         Sandbox mode override
+      --sandbox <mode>         Explicit sandbox mode override
       --read-only              Read-only sandbox (no file changes)
-      --full-auto              Compatibility alias for workspace-write (default)
+      --full-auto              Compatibility alias for full access (default)
       --ephemeral              Do not persist the Codex session
       --output-schema <path>   Require the final response to match a JSON Schema
       --notify                 Desktop notification when a long run finishes (macOS/Linux; opt-in)
@@ -48,8 +48,8 @@ Examples:
   # Continue conversation
   ask_codex.sh "Also add retry logic" --session <id>
 
-  # Read-only structured analysis with an attached image
-  ask_codex.sh "Compare the screenshot with the implementation" --read-only \
+  # Structured analysis with an attached image
+  ask_codex.sh "Compare the screenshot with the implementation" \
     --image screenshot.png --output-schema result.schema.json
 USAGE
 }
@@ -104,7 +104,6 @@ model=""
 reasoning_effort=""
 sandbox_mode=""
 read_only=false
-full_auto=true
 fast=false
 ephemeral=false
 notify=false
@@ -123,9 +122,9 @@ while [[ $# -gt 0 ]]; do
     --model)          model="${2:-}"; shift 2 ;;
     --reasoning)      reasoning_effort="${2:-}"; shift 2 ;;
     --fast)           fast=true; shift ;;
-    --sandbox)        sandbox_mode="${2:-}"; full_auto=false; shift 2 ;;
-    --read-only)      read_only=true; full_auto=false; shift ;;
-    --full-auto)      full_auto=true; shift ;;
+    --sandbox)        sandbox_mode="${2:-}"; [[ -n "$sandbox_mode" ]] || { echo "[ERROR] --sandbox requires a mode." >&2; exit 1; }; read_only=false; shift 2 ;;
+    --read-only)      read_only=true; sandbox_mode=""; shift ;;
+    --full-auto)      read_only=false; sandbox_mode=""; shift ;;
     --ephemeral)      ephemeral=true; shift ;;
     --output-schema)  output_schema="${2:-}"; shift 2 ;;
     --notify)         notify=true; shift ;;
@@ -188,7 +187,7 @@ if [[ -n "$reasoning_effort" ]]; then
 fi
 
 if [[ -n "$session_id" && ( "$read_only" == true || -n "$sandbox_mode" ) ]]; then
-  echo "[ERROR] Codex resume cannot override sandbox mode; it keeps the original session permissions." >&2
+  echo "[ERROR] Codex resume does not support --read-only or --sandbox here. Start a new session for a restricted run." >&2
   exit 1
 fi
 
@@ -232,7 +231,7 @@ fi
 
 if [[ -n "$session_id" ]]; then
   # Current Codex resume supports JSON, model/image/schema overrides, and non-git workspaces.
-  cmd=(codex exec resume "${common_args[@]}")
+  cmd=(codex exec resume "${common_args[@]}" --dangerously-bypass-approvals-and-sandbox)
   [[ -n "$model" ]] && cmd+=(-m "$model")
   [[ "$ephemeral" == true ]] && cmd+=(--ephemeral)
   [[ -n "$output_schema" ]] && cmd+=(--output-schema "$output_schema")
@@ -247,8 +246,8 @@ else
     cmd+=(--sandbox read-only)
   elif [[ -n "$sandbox_mode" ]]; then
     cmd+=(--sandbox "$sandbox_mode")
-  elif [[ "$full_auto" == true ]]; then
-    cmd+=(--sandbox workspace-write)
+  else
+    cmd+=(--dangerously-bypass-approvals-and-sandbox)
   fi
   [[ -n "$model" ]] && cmd+=(-m "$model")
   [[ "$ephemeral" == true ]] && cmd+=(--ephemeral)
