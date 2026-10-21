@@ -30,6 +30,7 @@ param(
 
     [switch]$ReadOnly,
 
+    [Alias('DangerouslyBypassApprovalsAndSandbox')]
     [switch]$FullAuto,
 
     [switch]$Ephemeral,
@@ -70,7 +71,7 @@ Options:
   -Fast                        Use the Fast service tier (higher usage/cost)
   -Sandbox <mode>              Explicit sandbox mode override
   -ReadOnly                    Read-only sandbox (no file changes)
-  -FullAuto                    Compatibility alias for full access (default)
+  -FullAuto                    Full access (default); alias: -DangerouslyBypassApprovalsAndSandbox
   -Ephemeral                   Do not persist the Codex session
   -OutputSchema <path>         Require the final response to match a JSON Schema
   -Notify                      Desktop notification when a long run finishes (opt-in)

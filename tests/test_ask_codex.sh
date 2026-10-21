@@ -112,6 +112,10 @@ MOCK_CODEX_MODE=success run_wrapper --full-auto >/dev/null
 assert_arg '--dangerously-bypass-approvals-and-sandbox'
 assert_no_arg '--sandbox'
 
+MOCK_CODEX_MODE=success run_wrapper --read-only --dangerously-bypass-approvals-and-sandbox >/dev/null
+assert_arg '--dangerously-bypass-approvals-and-sandbox'
+assert_no_arg '--sandbox'
+
 set +e
 restricted_resume_output="$(MOCK_CODEX_MODE=success run_wrapper --session thread-test --read-only 2>&1)"
 restricted_resume_exit=$?

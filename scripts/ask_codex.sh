@@ -24,7 +24,7 @@ Options:
       --reasoning <level>      Optional reasoning override; normally use configured high
       --sandbox <mode>         Explicit sandbox mode override
       --read-only              Read-only sandbox (no file changes)
-      --full-auto              Compatibility alias for full access (default)
+      --full-auto              Full access (default); alias: --dangerously-bypass-approvals-and-sandbox
       --ephemeral              Do not persist the Codex session
       --output-schema <path>   Require the final response to match a JSON Schema
       --notify                 Desktop notification when a long run finishes (macOS/Linux; opt-in)
@@ -124,7 +124,8 @@ while [[ $# -gt 0 ]]; do
     --fast)           fast=true; shift ;;
     --sandbox)        sandbox_mode="${2:-}"; [[ -n "$sandbox_mode" ]] || { echo "[ERROR] --sandbox requires a mode." >&2; exit 1; }; read_only=false; shift 2 ;;
     --read-only)      read_only=true; sandbox_mode=""; shift ;;
-    --full-auto)      read_only=false; sandbox_mode=""; shift ;;
+    --full-auto|--dangerously-bypass-approvals-and-sandbox)
+                      read_only=false; sandbox_mode=""; shift ;;
     --ephemeral)      ephemeral=true; shift ;;
     --output-schema)  output_schema="${2:-}"; shift 2 ;;
     --notify)         notify=true; shift ;;

@@ -94,7 +94,7 @@ Windows：
 7. 检查硬编码成功结果、吞掉异常、未经确认的 API、死代码和无调用方的抽象。
 8. 需要返工时继续原会话，只发送新发现和修正要求，不重复整个任务。
 
-新会话和续接会话默认传入 `--dangerously-bypass-approvals-and-sandbox`，使 Codex 不受自身沙箱和审批限制。不要因任务是分析、探索或评审就自动加 `--read-only`；只读是用户明确要求时的权限选项。一次性测试可以使用 `--ephemeral`。调用方仍须检查 Codex 的改动与验证结果。
+包装脚本默认替新会话和续接会话给 Codex 传入 `--dangerously-bypass-approvals-and-sandbox`，使 Codex 不受自身沙箱和审批限制，调用包装脚本时不用再传。不要因任务是分析、探索或评审就自动加 `--read-only`；只读是用户明确要求时的权限选项。一次性测试可以使用 `--ephemeral`。调用方仍须检查 Codex 的改动与验证结果。
 
 ## 思考强度
 
@@ -154,7 +154,7 @@ python3 "$SKILL_DIR"/scripts/cutout.py input.png output.png
 - `--reasoning <low|high|max>`：特殊情况下覆盖默认思考强度，常规调用不要传递。
 - `--sandbox <mode>`：为新会话显式指定沙箱模式。
 - `--read-only`：创建只读新会话。
-- `--full-auto`：默认最高权限的兼容别名。
+- `--full-auto`：默认的最高权限，可省略；`--dangerously-bypass-approvals-and-sandbox` 是它的别名。
 - `--ephemeral`：不持久化会话。
 - `--output-schema <path>`：约束最终输出结构。
 - `--notify`：长任务结束后发送通知。

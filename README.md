@@ -116,7 +116,7 @@ elapsed=<seconds>s
 | `--file <path>` | 提供优先阅读的入口文件，可以重复使用 |
 | `--read-only` | 创建只读会话 |
 | `--sandbox <mode>` | 为新会话指定沙箱模式 |
-| `--full-auto` | 默认最高权限的兼容别名 |
+| `--full-auto` | 默认的最高权限，可省略；`--dangerously-bypass-approvals-and-sandbox` 是它的别名 |
 | `--session <id>` | 继续已有会话 |
 | `--ephemeral` | 不持久化新会话 |
 | `--output-schema <path>` | 使用 JSON Schema 约束最终结果 |
