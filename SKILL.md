@@ -131,19 +131,7 @@ Markdown 结果包含：
 
 ## 图片
 
-`--image` 通过默认 Codex 运行环境发送给 Codex。
-
-需要透明背景图片时：
-
-1. 先明确要求生成透明背景 PNG。
-2. 指定最终输出路径，并要求 Codex 报告该路径。
-3. 只有原生透明效果不可靠时，才使用灰底抠图工具：
-
-```bash
-python3 "$SKILL_DIR"/scripts/cutout.py input.png output.png
-```
-
-使用该后备方案时，让图像生成在纯 `#808080` 背景上，执行抠图后确认输出为 RGBA，并检查边缘质量。
+`--image` 通过默认 Codex 运行环境发送给 Codex，适用于需要向 Codex 附加设计稿比对、UI 走查或报错截图等视觉上下文的多模态任务。
 
 ## 对外参数
 
