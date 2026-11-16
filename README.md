@@ -160,3 +160,11 @@ bash tests/test_ask_codex.sh
 ```text
 用 Codex 处理这个明确的代码修改。
 ```
+
+## 延伸阅读
+
+关于主从 Agent 怎么分工、Codex 底层循环怎么运转，可以参考 Oil Book 里的几篇文章与译文：
+
+- [《怎样用好子 Agent》](https://book.oiloil.org/articles/subagent-workflow?utm_source=github&utm_medium=referral&utm_campaign=codex-readme)
+- [《拆解 Codex 的 Agent 核心循环》](https://book.oiloil.org/articles/unrolling-the-codex-agent-loop?utm_source=github&utm_medium=referral&utm_campaign=codex-readme)
+- [《Harness Engineering：在 Agent 优先的世界中用好 Codex》](https://book.oiloil.org/articles/harness-engineering?utm_source=github&utm_medium=referral&utm_campaign=codex-readme)
