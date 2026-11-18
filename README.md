@@ -22,7 +22,7 @@ npx skills add oil-oil/codex -g -y
 
 运行前需要准备：
 
-- 已安装并登录 [Codex CLI](https://github.com/openai/codex)。
+- 已安装并登录 [Codex CLI](https://github.com/openai/codex)，或在 macOS 上已安装并登录内置 Codex 的 `ChatGPT.app`（脚本在 macOS 上默认优先使用 `ChatGPT.app/Contents/Resources/codex-cli/bin/codex`，不存在时回退到 `PATH` 中的 `codex`，也可通过 `CODEX_BIN` 指定可执行文件）。
 - macOS、Linux 或 Windows。
 - `jq`。包装脚本使用它处理 Codex 的 JSONL 事件。
 

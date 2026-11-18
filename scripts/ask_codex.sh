@@ -61,6 +61,46 @@ require_cmd() {
   fi
 }
 
+resolve_codex_bin() {
+  if [[ -n "${CODEX_BIN:-}" ]]; then
+    if [[ -f "$CODEX_BIN" && -x "$CODEX_BIN" ]]; then
+      echo "$CODEX_BIN"
+      return 0
+    fi
+    if command -v "$CODEX_BIN" >/dev/null 2>&1; then
+      command -v "$CODEX_BIN"
+      return 0
+    fi
+    echo "[ERROR] Configured CODEX_BIN is not executable: $CODEX_BIN" >&2
+    exit 1
+  fi
+
+  if [[ "$(uname -s)" == "Darwin" ]]; then
+    if [[ "${CODEX_CHATGPT_APP+x}" == "x" ]]; then
+      if [[ -n "$CODEX_CHATGPT_APP" && -x "$CODEX_CHATGPT_APP/Contents/Resources/codex-cli/bin/codex" ]]; then
+        echo "$CODEX_CHATGPT_APP/Contents/Resources/codex-cli/bin/codex"
+        return 0
+      fi
+    else
+      local app_root
+      for app_root in "/Applications/ChatGPT.app" "$HOME/Applications/ChatGPT.app"; do
+        if [[ -x "$app_root/Contents/Resources/codex-cli/bin/codex" ]]; then
+          echo "$app_root/Contents/Resources/codex-cli/bin/codex"
+          return 0
+        fi
+      done
+    fi
+  fi
+
+  if command -v codex >/dev/null 2>&1; then
+    command -v codex
+    return 0
+  fi
+
+  echo "[ERROR] Missing required command: codex (install Codex CLI or macOS ChatGPT.app, or set CODEX_BIN)" >&2
+  exit 1
+}
+
 trim_whitespace() {
   awk 'BEGIN { RS=""; ORS="" } { gsub(/^[ \t\r\n]+|[ \t\r\n]+$/, ""); print }' <<<"$1"
 }
@@ -138,7 +178,11 @@ while [[ $# -gt 0 ]]; do
 done
 
 selected_runtime="default"
-require_cmd codex
+codex_bin="$(resolve_codex_bin)"
+codex_bundle_root="$(cd "$(dirname "$codex_bin")/.." 2>/dev/null && pwd || true)"
+if [[ -n "$codex_bundle_root" && -d "$codex_bundle_root/codex-path" ]]; then
+  export PATH="$PATH:$codex_bundle_root/codex-path"
+fi
 require_cmd jq
 
 # --- Validate inputs ---
@@ -232,7 +276,7 @@ fi
 
 if [[ -n "$session_id" ]]; then
   # Current Codex resume supports JSON, model/image/schema overrides, and non-git workspaces.
-  cmd=(codex exec resume "${common_args[@]}" --dangerously-bypass-approvals-and-sandbox)
+  cmd=("$codex_bin" exec resume "${common_args[@]}" --dangerously-bypass-approvals-and-sandbox)
   [[ -n "$model" ]] && cmd+=(-m "$model")
   [[ "$ephemeral" == true ]] && cmd+=(--ephemeral)
   [[ -n "$output_schema" ]] && cmd+=(--output-schema "$output_schema")
@@ -242,7 +286,7 @@ if [[ -n "$session_id" ]]; then
   cmd+=("$session_id" -)
 else
   # New session
-  cmd=(codex exec --cd "$workspace" "${common_args[@]}")
+  cmd=("$codex_bin" exec --cd "$workspace" "${common_args[@]}")
   if [[ "$read_only" == true ]]; then
     cmd+=(--sandbox read-only)
   elif [[ -n "$sandbox_mode" ]]; then

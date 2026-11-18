@@ -39,6 +39,7 @@ chmod +x "$test_tmp/bin/script" "$test_tmp/bin/codex"
 
 run_wrapper() {
   PATH="$test_tmp/bin:$PATH" \
+    CODEX_CHATGPT_APP="" \
     CODEX_SKILL_STATE_HOME="$test_tmp/state" \
     MOCK_CODEX_ARGS="$test_tmp/codex.args" \
     "$repo_dir/scripts/ask_codex.sh" "test task" \
@@ -159,5 +160,46 @@ partial_result="$(extract_value "$partial_output" result_path)"
 [[ "$(jq -r '.status' "$partial_result")" == "failed" ]]
 [[ "$(jq -r '.exit_code' "$partial_result")" -eq 43 ]]
 [[ "$(jq -r '.session_id' "$partial_result")" == "partial-thread" ]]
+
+if [[ "$(uname -s)" == "Darwin" ]]; then
+  app_bundle="$test_tmp/ChatGPT.app"
+  mkdir -p "$app_bundle/Contents/Resources/codex-cli/bin" "$app_bundle/Contents/Resources/codex-cli/codex-path"
+  cat > "$app_bundle/Contents/Resources/codex-cli/bin/codex" <<'FAKE_APP_CODEX'
+#!/usr/bin/env bash
+printf '%s\n' "$PATH" > "$MOCK_CODEX_PATH_FILE"
+printf '%s\n' '{"type":"thread.started","thread_id":"thread-chatgpt-app"}'
+printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"from chatgpt app"}}'
+printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":1,"cached_input_tokens":0,"output_tokens":1,"reasoning_output_tokens":0}}'
+FAKE_APP_CODEX
+  chmod +x "$app_bundle/Contents/Resources/codex-cli/bin/codex"
+
+  app_output="$(
+    PATH="$test_tmp/bin:$PATH" \
+      CODEX_CHATGPT_APP="$app_bundle" \
+      CODEX_SKILL_STATE_HOME="$test_tmp/state" \
+      MOCK_CODEX_MODE=failure \
+      MOCK_CODEX_ARGS="$test_tmp/codex.args" \
+      MOCK_CODEX_PATH_FILE="$test_tmp/codex.path" \
+      "$repo_dir/scripts/ask_codex.sh" "test app codex" \
+      --workspace "$test_tmp/workspace" \
+      --output "$test_tmp/app-result.md" 2>&1
+  )"
+  assert_contains "$app_output" "session_id=thread-chatgpt-app"
+  assert_contains "$(cat "$test_tmp/app-result.md")" "from chatgpt app"
+  assert_contains "$(cat "$test_tmp/codex.path")" "$app_bundle/Contents/Resources/codex-cli/codex-path"
+
+  override_output="$(
+    PATH="$test_tmp/bin:$PATH" \
+      CODEX_BIN="$test_tmp/bin/codex" \
+      CODEX_CHATGPT_APP="$app_bundle" \
+      CODEX_SKILL_STATE_HOME="$test_tmp/state" \
+      MOCK_CODEX_MODE=success \
+      MOCK_CODEX_ARGS="$test_tmp/codex.args" \
+      "$repo_dir/scripts/ask_codex.sh" "test override codex" \
+      --workspace "$test_tmp/workspace" \
+      --output "$test_tmp/override-result.md" 2>&1
+  )"
+  assert_contains "$override_output" "session_id=thread-test"
+fi
 
 printf 'ask_codex.sh tests passed\n'

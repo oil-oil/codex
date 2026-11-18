@@ -9,7 +9,7 @@ description: 将编码、代码库探索、实现、评审和验证任务委托�
 
 ## 核心规则
 
-- 通过内置包装脚本调用 Codex，不要直接执行 `codex exec`。包装脚本负责捕获 JSONL、显示有效进度、记录会话 ID，并生成精简的 Markdown 结果。
+- 通过内置包装脚本调用 Codex，不要直接执行 `codex exec`。包装脚本负责捕获 JSONL、显示有效进度、记录会话 ID，并生成精简的 Markdown 结果。macOS 上若已安装 `ChatGPT.app`，脚本优先使用应用内置的 `Contents/Resources/codex-cli/bin/codex`，不存在时回退到 `PATH` 中的 `codex`（可用 `CODEX_BIN` 覆盖）。
 - 常规调用不选择或传递模型、思考强度与模型提供商，由本机默认 Codex 配置决定。
 - 每个任务先调用一次包装脚本。成功后读取 `output_path`，检查工作区结果，再判断是否需要继续同一会话。
 - 委托提示词应包含目标、完成标准、约束和必要背景，不要规定每一个实现步骤，也不要粘贴大段文件内容。

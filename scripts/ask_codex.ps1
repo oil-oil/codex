@@ -109,6 +109,38 @@ function Test-Command {
     }
 }
 
+function Resolve-CodexCommand {
+    if (-not [string]::IsNullOrWhiteSpace($env:CODEX_BIN)) {
+        if (Test-Path $env:CODEX_BIN -PathType Leaf) {
+            return (Resolve-Path $env:CODEX_BIN).Path
+        }
+        $cmd = Get-Command $env:CODEX_BIN -ErrorAction SilentlyContinue
+        if ($cmd) { return $cmd.Source }
+        Write-Error "[ERROR] Configured CODEX_BIN is not executable: $($env:CODEX_BIN)"
+        exit 1
+    }
+
+    if ($IsMacOS) {
+        if (Test-Path Env:CODEX_CHATGPT_APP) {
+            if (-not [string]::IsNullOrWhiteSpace($env:CODEX_CHATGPT_APP)) {
+                $candidate = Join-Path $env:CODEX_CHATGPT_APP 'Contents/Resources/codex-cli/bin/codex'
+                if (Test-Path $candidate -PathType Leaf) { return $candidate }
+            }
+        } else {
+            foreach ($appRoot in @('/Applications/ChatGPT.app', (Join-Path $HOME 'Applications/ChatGPT.app'))) {
+                $candidate = Join-Path $appRoot 'Contents/Resources/codex-cli/bin/codex'
+                if (Test-Path $candidate -PathType Leaf) { return $candidate }
+            }
+        }
+    }
+
+    $found = Get-Command 'codex' -ErrorAction SilentlyContinue
+    if ($found) { return $found.Source }
+
+    Write-Error "[ERROR] Missing required command: codex"
+    exit 1
+}
+
 function Trim-Whitespace {
     param([string]$Text)
     if ([string]::IsNullOrEmpty($Text)) { return '' }
@@ -220,7 +252,12 @@ if ($Help) {
 }
 
 # Check required commands
-Test-Command 'codex'
+$codexBin = Resolve-CodexCommand
+$codexBundleRoot = Split-Path (Split-Path $codexBin -Parent) -Parent
+$codexExtraPath = if ($codexBundleRoot) { Join-Path $codexBundleRoot 'codex-path' } else { $null }
+if ($codexExtraPath -and (Test-Path $codexExtraPath -PathType Container)) {
+    $env:PATH = "$($env:PATH)$([System.IO.Path]::PathSeparator)$codexExtraPath"
+}
 Test-Command 'jq'
 $script:SelectedRuntime = 'default'
 
@@ -355,9 +392,9 @@ if (-not [string]::IsNullOrEmpty($Session)) {
     if ($IsWindows -or $PSVersionTable.PSVersion.Major -le 5) {
         # Use cmd.exe to run codex (works with .cmd/.ps1 wrappers)
         $psi.FileName = 'cmd.exe'
-        $psi.Arguments = '/c codex ' + ($codexArgs -join ' ')
+        $psi.Arguments = '/c "' + $codexBin + '" ' + ($codexArgs -join ' ')
     } else {
-        $psi.FileName = 'codex'
+        $psi.FileName = $codexBin
         $psi.Arguments = $codexArgs -join ' '
     }
     $psi.WorkingDirectory = $Workspace
